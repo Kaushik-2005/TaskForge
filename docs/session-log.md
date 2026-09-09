@@ -21,3 +21,14 @@
 - Weak areas / incomplete work: Continue reinforcing that health checks prove a narrow request path only.
 - Exact next action: Start Day 2 / W1.2 by designing resource routes and status/error contracts for in-memory project/task CRUD.
 - Current repository state / relevant uncommitted work: Git status unavailable because this folder is not currently a Git repository.
+
+## 2026-09-09 - Day 2 / W1.2 - In-memory project/task contracts
+- Starting point: Day 1 completed with health endpoint and no resource API.
+- Concepts and work covered: Resource-style routes, GET safety, POST creation, `201 Created`, `Location` header, DELETE idempotency, nested task routes, page-size bounds, and error envelopes.
+- Learner evidence: Learner chose `POST /api/v1/projects` over action-style GET, identified `201 Created`, explained DELETE idempotency as final-state semantics, and completed the endpoint table with minor route-shape corrections.
+- Files changed: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/main.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`.
+- Commands run and outcomes: Ruff check passed; ruff format check passed; pytest passed with `8 passed` and two dependency deprecation warnings. An earlier pytest run had one failing wrong-method error-envelope test; fixed by handling `StarletteHTTPException`.
+- Problems and resolutions: Corrected singular `/task/{task_id}` table route to plural `/tasks/{task_id}`; made nested task item routes report missing parent projects explicitly.
+- Weak areas / incomplete work: Need Day 3 validation depth for unknown fields, null versus missing, and stricter response boundaries.
+- Exact next action: Start Day 3 / W1.3 by classifying malformed JSON, invalid IDs, oversized fields, forbidden state changes, and unexpected fields by rejection layer.
+- Current repository state / relevant uncommitted work: Git is now initialized; README had a prior uncommitted change removing the stale non-Git limitation and was preserved.

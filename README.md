@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 1 / W1.1 is in progress. The repository has a minimal FastAPI API with a live health endpoint.
+Day 2 / W1.2 is completed. The repository has a minimal FastAPI API with a live health endpoint and in-memory project/task CRUD under `/api/v1`.
 
 ## Records
 
@@ -46,7 +46,23 @@ python -m ruff format --check .
 python -m pytest -q
 ```
 
+## API endpoints
+
+- `GET /health/live`
+- `POST /api/v1/projects`
+- `GET /api/v1/projects?page_size=20`
+- `GET /api/v1/projects/{project_id}`
+- `PATCH /api/v1/projects/{project_id}`
+- `DELETE /api/v1/projects/{project_id}`
+- `POST /api/v1/projects/{project_id}/tasks`
+- `GET /api/v1/projects/{project_id}/tasks?page_size=20`
+- `GET /api/v1/projects/{project_id}/tasks/{task_id}`
+- `PATCH /api/v1/projects/{project_id}/tasks/{task_id}`
+- `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
+
+Data is in memory and disappears when the API process restarts.
+
 ## Limitations
 
-- No database, auth, task data model, or CI exists yet.
-- This folder is not currently a Git repository.
+- No database, auth, tenant/workspace isolation, durable storage, or CI exists yet.
+

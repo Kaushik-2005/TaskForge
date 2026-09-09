@@ -2,19 +2,19 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 1 / W1.1 Request journey and environment
+- Day / module: Day 2 / W1.2 Routing and API contracts
 - Calendar date: 2026-09-09
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 1 core requirements completed; next action is to start Day 2 only when requested.
+- Exact current task: Day 2 core requirements completed; next action is to start Day 3 only when requested.
 - Last updated: 2026-09-09
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
 | --- | --- | --- | --- | --- | --- |
 | 1 | W1.1 | 2026-09-09 | Completed | Checked | Completed |
-| 2 | W1.2 | - | Not started | Not checked | Not started |
+| 2 | W1.2 | 2026-09-09 | Completed | Checked | Completed |
 | 3 | W1.3 | - | Not started | Not checked | Not started |
 | 4 | W1.4 | - | Not started | Not checked | Not started |
 | 5 | W1.5 | - | Not started | Not checked | Not started |
@@ -51,16 +51,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 1 assigned readings were BFP 01 message anatomy, transport, TLS, methods, debugging; BFP 14 settings basics; RFC 9110 HTTP semantics. Covered selected request journey, local HTTP, and settings concepts in guided session.
-- Learner answer or concise evidence: Learner correctly identified that a 404 from `/health/live` proves the server is reachable and HTTP routing was reached, while suggesting the endpoint path or registration is wrong. Learner explained HTTP statelessness and how cookies/tokens carry identity proof on later requests. Learner traced a successful curl request through address/port, TCP connection, GET path, route/handler, and 200 response.
-- Exercise path/result: Verbal trace exercise completed and reviewed; missing response body detail was corrected.
-- Changed files: `.gitignore`, `.env.example`, `pyproject.toml`, `README.md`, `src/taskforge/__init__.py`, `src/taskforge/config.py`, `src/taskforge/main.py`, `tests/test_health.py`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/session-log.md`, `docs/design.md`.
-- Commands and actual results: `python --version` and `py --version` returned Python 3.12.0; `python -m venv .venv` succeeded; `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"` succeeded; `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed after formatting; `.\.venv\Scripts\python.exe -m pytest -q` passed with `1 passed` and two dependency deprecation warnings; live Uvicorn smoke check returned `StatusCode=200` and body `{"status":"ok"}`.
-- Design entry / related ADRs: docs/design.md Day 1 entry completed; no ADRs yet.
-- Untested assumptions: No public deployment, TLS profile, readiness/dependency health, database behavior, or auth behavior exists yet.
-- Weak concepts: None blocking for Day 1. Continue reinforcing that a health endpoint only proves a narrow request path.
-- Optional work deferred: TLS/reverse proxy details beyond local explanation.
-
+- Reading/sections: Day 2 assigned readings were BFP 02; selected BFP 07 resource/method/status/pagination sections; RFC 9110 HTTP semantics. Covered selected route, resource, method, status, idempotency, and pagination concepts in guided session.
+- Learner answer or concise evidence: Learner correctly chose `POST /api/v1/projects` over action-style GET for project creation, identified `201 Created`, and explained DELETE idempotency as same final server state even when repeated responses differ. Endpoint-table exercise was mostly correct; corrected task item route to plural `/tasks/{task_id}` and fixed brace typo.
+- Exercise path/result: Endpoint table completed and reviewed; selected `PATCH` for partial updates.
+- Changed files: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/main.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`.
+- Commands and actual results: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `8 passed` and two dependency deprecation warnings. Earlier test run failed because Starlette-generated 405 responses were not caught by the FastAPI HTTPException handler; fixed by handling StarletteHTTPException.
+- Design entry / related ADRs: docs/design.md Day 2 entry completed; no ADRs yet.
+- Untested assumptions: Data is process-local memory only; no persistence, auth, tenant isolation, concurrent write behavior, or database constraints exist yet.
+- Weak concepts: Continue reinforcing the difference between route shape, method semantics, and persistence behavior.
+- Optional work deferred: Deep version migration strategy beyond reserving `/api/v1`.
 ## Weekly gates
 - [ ] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -72,8 +71,11 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 2 / W1.2, Orient
-- File/function/section: roadmap.md Day 2; existing `src/taskforge/main.py`
-- Next question or exercise: Define resource routes and status codes for in-memory project/task CRUD.
-- Next build task: Add `/api/v1` in-memory project/task CRUD with bounded list behavior and consistent errors.
+- Module and phase: Day 3 / W1.3, Orient
+- File/function/section: roadmap.md Day 3; existing `src/taskforge/models.py` and API request/response bodies
+- Next question or exercise: Classify malformed JSON, invalid IDs, oversized fields, forbidden state changes, and unexpected fields by rejection layer.
+- Next build task: Separate create/update/read models more strictly, add payload limits and explicit patch semantics.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+
+
+
