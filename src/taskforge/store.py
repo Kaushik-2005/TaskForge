@@ -8,13 +8,8 @@ from taskforge.models import (
     ProjectUpdate,
     TaskCreate,
     TaskRead,
-    TaskStatus,
     TaskUpdate,
 )
-
-
-class InvalidStateTransitionError(Exception):
-    pass
 
 
 @dataclass
@@ -96,8 +91,6 @@ class InMemoryStore:
         task = self.get_task(project_id, task_id)
         if task is None:
             return None
-        if task.status == TaskStatus.todo and payload.status == TaskStatus.done:
-            raise InvalidStateTransitionError
         changes = payload.model_dump(exclude_unset=True)
         updated = task.model_copy(update=changes)
         self.tasks[project_id][task_id] = updated

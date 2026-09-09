@@ -2,7 +2,7 @@
 
 ## Day 2 scope
 
-TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, and stricter serialization/validation boundaries. The API is intentionally not durable; persistence starts later in Week 1.
+TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, and startup settings validation. The API is intentionally not durable; persistence starts later in Week 1.
 
 ## Supported endpoints
 
@@ -63,8 +63,17 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `18 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
+- Pytest: `25 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
 
+
+## Runtime boundary behavior
+
+- Route handlers own HTTP status codes, response headers, and mapping service errors to HTTP errors.
+- `TaskForgeService` owns business rules such as task status transitions.
+- `InMemoryStore` owns process-local data access only.
+- Every response includes `X-Request-ID`; a supplied request ID is preserved.
+- Access logs are JSON records with request ID, method, path, status code, and duration. Request bodies are not logged.
+- Invalid startup settings, such as an unsupported environment, prevent app construction.

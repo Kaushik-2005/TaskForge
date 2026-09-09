@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 3 / W1.3 Serialization and validation
+- Day / module: Day 4 / W1.4 Layers and configuration
 - Calendar date: 2026-09-09
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 3 core requirements completed; next action is to start Day 4 only when requested.
+- Exact current task: Day 4 core requirements completed; next action is to start Day 5 only when requested.
 - Last updated: 2026-09-09
 
 ## Day-by-day progress
@@ -16,7 +16,7 @@
 | 1 | W1.1 | 2026-09-09 | Completed | Checked | Completed |
 | 2 | W1.2 | 2026-09-09 | Completed | Checked | Completed |
 | 3 | W1.3 | 2026-09-09 | Completed | Checked | Completed |
-| 4 | W1.4 | - | Not started | Not checked | Not started |
+| 4 | W1.4 | 2026-09-09 | Completed | Checked | Completed |
 | 5 | W1.5 | - | Not started | Not checked | Not started |
 | 6 | W1.6 | - | Not started | Not checked | Not started |
 | 7 | W1.7 | - | Not started | Not checked | Not started |
@@ -51,15 +51,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 3 assigned readings were BFP 03 serialization/deserialization and BFP 05 validation/transformation sections. Covered parsing, schema validation, contract validation, domain validation, missing/null PATCH behavior, UUID path parsing, and response boundaries.
-- Learner answer or concise evidence: Learner correctly classified malformed JSON as JSON parsing, empty name as schema validation, unexpected `is_admin` field as contract validation, and forbidden task status jump as domain validation.
-- Exercise path/result: Classification exercise completed and reviewed. Validation tests added for malformed JSON, unknown fields, null/missing PATCH behavior including explicit null task title, status transition conflicts, invalid UUIDs, and response field boundaries.
-- Changed files: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`, `tests/test_validation.py`.
-- Commands and actual results: Initial Day 3 validation tests failed for unknown fields, status transition, and invalid UUID handling; a later explicit-null test exposed that raw `ValueError` objects in validation details needed JSON-safe encoding; after implementation, `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `18 passed` and two dependency deprecation warnings.
-- Design entry / related ADRs: docs/design.md Day 3 entry completed; no ADRs yet.
-- Untested assumptions: No global body-size limit middleware yet; no auth-sensitive response fields exist yet; no persistence constraints exist yet.
-- Weak concepts: Continue reinforcing malformed-ID `422` versus valid-missing-ID `404`.
-- Optional work deferred: Full payload byte-size limits beyond field length validation.
+- Reading/sections: Day 4 assigned readings were BFP 06 controllers/services/middleware, BFP 14 settings precedence/startup validation, and BFP 12 error classification. Covered route/service/store ownership, exception mapping, request ID middleware, structured logs, and startup config validation.
+- Learner answer or concise evidence: Learner correctly placed the task status transition rule in the service layer. Learner initially placed validation error-envelope behavior in route handlers, then corrected that invalid UUID validation fails before the route handler runs and should be mapped by exception handling. Learner traced a `todo -> done` task update through route parsing, service rule enforcement, store update only after approval, error mapping, and expected `409 Conflict`.
+- Exercise path/result: Task-update trace exercise completed and reviewed.
+- Changed files: `README.md`, `.env.example`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `docs/decisions.md`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/errors.py`, `src/taskforge/main.py`, `src/taskforge/services.py`, `src/taskforge/store.py`, `tests/test_app_boundaries.py`, `tests/test_services.py`.
+- Commands and actual results: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `25 passed` and two dependency deprecation warnings. Earlier ruff check found one import-order issue and fixed it with `ruff check . --fix`.
+- Design entry / related ADRs: docs/design.md Day 4 entry completed; ADR-001 accepted in docs/decisions.md.
+- Untested assumptions: Request ID logging is tested through the test client but not observed from a live Uvicorn terminal session; no database-backed repository exists yet.
+- Weak concepts: Keep reinforcing exception handlers versus route handlers for pre-handler validation failures.
+- Optional work deferred: More advanced logging configuration and log shipping.
 ## Weekly gates
 - [ ] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -71,11 +71,13 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 4 / W1.4, Orient
-- File/function/section: roadmap.md Day 4; route handlers in `src/taskforge/api.py` and storage logic in `src/taskforge/store.py`
-- Next question or exercise: Trace a task update through handler, service, repository/store, and error mapping boundaries.
-- Next build task: Split HTTP handlers from service rules, add request IDs, structured logs, startup config validation, and service tests.
+- Module and phase: Day 5 / W1.5, Orient
+- File/function/section: roadmap.md Day 5; proposed schema for users/workspaces/memberships/projects/tasks
+- Next question or exercise: Draw the ER model and explain why constraints backstop API validation.
+- Next build task: Add local PostgreSQL Compose configuration and initial relational schema/migration planning.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+
+
 
 
 

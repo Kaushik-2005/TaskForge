@@ -54,3 +54,14 @@
 - Weak areas / incomplete work: Global request body byte-size limits remain deferred.
 - Exact next action: Start Day 4 / W1.4 with layer separation.
 - Current repository state / relevant uncommitted work: Day 3 files modified; run `git status --short` before committing.
+
+## 2026-09-09 - Day 4 / W1.4 - Layers, config, and request context
+- Starting point: Day 3 completed with route handlers calling the in-memory store directly and the status transition rule living near storage.
+- Concepts and work covered: Route/service/store separation, exception-handler ownership, middleware responsibilities, request IDs, structured logs, and startup settings validation.
+- Learner evidence: Learner correctly placed the task transition rule in the service layer, corrected validation error-envelope ownership to exception handlers, and traced a forbidden task update through route, service, store, error mapping, and `409 Conflict` response.
+- Files changed: `.env.example`, `README.md`, `docs/decisions.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/errors.py`, `src/taskforge/main.py`, `src/taskforge/services.py`, `src/taskforge/store.py`, `tests/test_app_boundaries.py`, `tests/test_services.py`.
+- Commands run and outcomes: Ruff check passed; ruff format check passed; pytest passed with `25 passed` and two dependency deprecation warnings. Ruff fixed one import-order issue.
+- Problems and resolutions: Moved business transition logic out of `InMemoryStore`; added ADR-001 to record the boundary decision.
+- Weak areas / incomplete work: Live log inspection, database repository boundaries, and global payload byte-size limits remain future work.
+- Exact next action: Start Day 5 / W1.5 by drawing the relational model and explaining why database constraints backstop API validation.
+- Current repository state / relevant uncommitted work: Day 4 files modified; run `git status --short` before committing.

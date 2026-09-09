@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 3 / W1.3 is completed. The repository has a minimal FastAPI API with a live health endpoint, in-memory project/task CRUD under `/api/v1`, and stricter request/response validation.
+Day 4 / W1.4 is completed. The repository has a FastAPI API with a live health endpoint, in-memory project/task CRUD under `/api/v1`, stricter request/response validation, a service layer, request IDs, structured access logs, and startup settings validation.
 
 ## Records
 
@@ -24,6 +24,13 @@ Create and activate a virtual environment:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+```
+
+Optional local environment variables are shown in `.env.example`:
+
+```powershell
+TASKFORGE_ENVIRONMENT=local
+TASKFORGE_LOG_LEVEL=INFO
 ```
 
 Run the API:
@@ -68,9 +75,12 @@ Validation behavior:
 - Path IDs must be valid UUIDs.
 - Malformed IDs return `422`; valid missing resources return `404`.
 - Task status cannot change directly from `todo` to `done`.
+- Every response includes `X-Request-ID`; incoming `X-Request-ID` is preserved.
+- Access logs are structured JSON and omit request bodies.
 
 ## Limitations
 
 - No database, auth, tenant/workspace isolation, durable storage, or CI exists yet.
+
 
 

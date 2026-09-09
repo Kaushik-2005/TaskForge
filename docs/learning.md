@@ -208,3 +208,68 @@ A good concise explanation: "TaskForge separates parsing, schema validation, con
 - Full payload byte-size limits are still deferred; current checks cover field length and page-size bounds.
 
 
+
+### Day 4 - W1.4: Layers and configuration
+
+#### Concept and why it exists
+Layering keeps different kinds of decisions in the right place. HTTP route handlers should not become the whole application; they should translate HTTP requests into application calls and translate application results back into HTTP responses.
+
+#### Mental model and small example
+```text
+HTTP route -> service -> store/repository -> service result/error -> HTTP response
+```
+
+For task update: the route parses UUIDs and request body, the service checks business rules, the store loads/saves data, and exception handlers format expected failures.
+
+#### What happens internally
+FastAPI handles routing and validation before route logic runs. The route calls a service with already-parsed values. The service asks the store for data and decides whether business rules allow the operation. Errors are raised as application exceptions and mapped to public HTTP errors at the API boundary.
+
+#### Boundaries, failure modes, and common mistakes
+- Business rules belong in services, not route handlers or storage code.
+- Validation errors can happen before route handlers run, so public validation formatting belongs in exception handlers.
+- Middleware is for cross-cutting request behavior such as request IDs, timing, and logging.
+- Configuration should fail at startup when required values are invalid, not later during a request.
+
+#### Alternatives and trade-offs
+Small apps can start route-heavy, but business rules become harder to reuse and test. A service layer adds a little structure now and pays off as database persistence, workers, and authorization arrive.
+
+#### TaskForge application
+Day 4 introduced clearer application boundaries:
+
+- `src/taskforge/api.py`: HTTP route handlers and service-error-to-HTTP mapping.
+- `src/taskforge/services.py`: business rules and application-level missing-resource errors.
+- `src/taskforge/store.py`: process-local data access only.
+- `src/taskforge/errors.py`: application exception types.
+- `src/taskforge/main.py`: app construction, request ID middleware, JSON access logs, validation/HTTP exception handlers, and startup settings load.
+- `src/taskforge/config.py`: startup settings validation for environment and log level.
+
+The `todo -> done` task transition rule moved out of storage and into `TaskForgeService`.
+
+#### Exercise and validation observations
+Learner correctly placed the status-transition rule in the service layer and corrected the validation error-envelope boundary after seeing that invalid UUIDs fail before handler execution.
+
+Learner traced a forbidden task update:
+
+- Route parses UUIDs and request body, then calls the service.
+- Service fetches current state and rejects `todo -> done`.
+- Store mutates only when the service approves.
+- API boundary maps the domain error to `409 Conflict`.
+
+Validation results on 2026-09-09:
+
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `.\.venv\Scripts\python.exe -m pytest -q`: `25 passed`, with two dependency deprecation warnings.
+
+#### Interview explanation
+A good concise explanation: "TaskForge now separates HTTP, application, and storage responsibilities. Routes parse valid requests and map service results to HTTP responses. The service owns business rules like task status transitions and raises application errors. The store only performs temporary in-memory data access. Validation errors can happen before route handlers run, so exception handlers own public error envelopes. Middleware owns request IDs and structured access logs because those apply to every request. Startup settings are validated before the app serves traffic."
+
+#### Sources: links, sections, required/optional
+- Required: BFP 06 controllers, services, and middleware.
+- Required: BFP 14 settings basics and startup validation.
+- Required: BFP 12 error classification.
+
+#### My questions, corrections, and revision items
+- Reinforce exception handler ownership for validation failures that occur before route handlers run.
+- ADR-001 records the route/service/store boundary decision.
+

@@ -3,6 +3,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from taskforge.errors import (
+    InvalidStateTransitionError,
+    ProjectNotFoundError,
+    TaskForgeError,
+    TaskNotFoundError,
+)
 from taskforge.models import (
     ProjectCreate,
     ProjectRead,
@@ -11,17 +17,17 @@ from taskforge.models import (
     TaskRead,
     TaskUpdate,
 )
-from taskforge.store import InMemoryStore, InvalidStateTransitionError
+from taskforge.services import TaskForgeService
 
 router = APIRouter(prefix="/api/v1")
 PageSize = Annotated[int, Query(ge=1, le=100)]
 
 
-def get_store(request: Request) -> InMemoryStore:
-    return request.app.state.store
+def get_service(request: Request) -> TaskForgeService:
+    return request.app.state.service
 
 
-StoreDep = Annotated[InMemoryStore, Depends(get_store)]
+ServiceDep = Annotated[TaskForgeService, Depends(get_service)]
 
 
 def api_error(status_code: int, code: str, message: str) -> HTTPException:
@@ -31,8 +37,12 @@ def api_error(status_code: int, code: str, message: str) -> HTTPException:
     )
 
 
-def not_found(message: str) -> HTTPException:
-    return api_error(status.HTTP_404_NOT_FOUND, "not_found", message)
+def map_service_error(error: TaskForgeError) -> HTTPException:
+    if isinstance(error, ProjectNotFoundError | TaskNotFoundError):
+        return api_error(status.HTTP_404_NOT_FOUND, error.code, error.message)
+    if isinstance(error, InvalidStateTransitionError):
+        return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
+    return api_error(status.HTTP_500_INTERNAL_SERVER_ERROR, error.code, error.message)
 
 
 @router.post(
@@ -43,51 +53,53 @@ def not_found(message: str) -> HTTPException:
 def create_project(
     payload: ProjectCreate,
     response: Response,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> ProjectRead:
-    project = store.create_project(payload)
+    project = service.create_project(payload)
     response.headers["Location"] = f"/api/v1/projects/{project.id}"
     return project
 
 
 @router.get("/projects", response_model=list[ProjectRead])
 def list_projects(
-    store: StoreDep,
+    service: ServiceDep,
     page_size: PageSize = 20,
 ) -> list[ProjectRead]:
-    return store.list_projects(page_size)
+    return service.list_projects(page_size)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectRead)
 def get_project(
     project_id: UUID,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> ProjectRead:
-    project = store.get_project(project_id)
-    if project is None:
-        raise not_found("Project not found")
-    return project
+    try:
+        return service.get_project(project_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectRead)
 def update_project(
     project_id: UUID,
     payload: ProjectUpdate,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> ProjectRead:
-    project = store.update_project(project_id, payload)
-    if project is None:
-        raise not_found("Project not found")
-    return project
+    try:
+        return service.update_project(project_id, payload)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: UUID,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> Response:
-    if not store.delete_project(project_id):
-        raise not_found("Project not found")
+    try:
+        service.delete_project(project_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -100,11 +112,12 @@ def create_task(
     project_id: UUID,
     payload: TaskCreate,
     response: Response,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> TaskRead:
-    task = store.create_task(project_id, payload)
-    if task is None:
-        raise not_found("Project not found")
+    try:
+        task = service.create_task(project_id, payload)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
     response.headers["Location"] = f"/api/v1/projects/{project_id}/tasks/{task.id}"
     return task
 
@@ -112,27 +125,25 @@ def create_task(
 @router.get("/projects/{project_id}/tasks", response_model=list[TaskRead])
 def list_tasks(
     project_id: UUID,
-    store: StoreDep,
+    service: ServiceDep,
     page_size: PageSize = 20,
 ) -> list[TaskRead]:
-    tasks = store.list_tasks(project_id, page_size)
-    if tasks is None:
-        raise not_found("Project not found")
-    return tasks
+    try:
+        return service.list_tasks(project_id, page_size)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskRead)
 def get_task(
     project_id: UUID,
     task_id: UUID,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> TaskRead:
-    if store.get_project(project_id) is None:
-        raise not_found("Project not found")
-    task = store.get_task(project_id, task_id)
-    if task is None:
-        raise not_found("Task not found")
-    return task
+    try:
+        return service.get_task(project_id, task_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskRead)
@@ -140,21 +151,12 @@ def update_task(
     project_id: UUID,
     task_id: UUID,
     payload: TaskUpdate,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> TaskRead:
-    if store.get_project(project_id) is None:
-        raise not_found("Project not found")
     try:
-        task = store.update_task(project_id, task_id, payload)
-    except InvalidStateTransitionError as exc:
-        raise api_error(
-            status.HTTP_409_CONFLICT,
-            "invalid_state_transition",
-            "Task status cannot change directly from todo to done",
-        ) from exc
-    if task is None:
-        raise not_found("Task not found")
-    return task
+        return service.update_task(project_id, task_id, payload)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.delete(
@@ -164,10 +166,10 @@ def update_task(
 def delete_task(
     project_id: UUID,
     task_id: UUID,
-    store: StoreDep,
+    service: ServiceDep,
 ) -> Response:
-    if store.get_project(project_id) is None:
-        raise not_found("Project not found")
-    if not store.delete_task(project_id, task_id):
-        raise not_found("Task not found")
+    try:
+        service.delete_task(project_id, task_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
