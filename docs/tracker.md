@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 2 / W1.2 Routing and API contracts
+- Day / module: Day 3 / W1.3 Serialization and validation
 - Calendar date: 2026-09-09
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 2 core requirements completed; next action is to start Day 3 only when requested.
+- Exact current task: Day 3 core requirements completed; next action is to start Day 4 only when requested.
 - Last updated: 2026-09-09
 
 ## Day-by-day progress
@@ -15,7 +15,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | W1.1 | 2026-09-09 | Completed | Checked | Completed |
 | 2 | W1.2 | 2026-09-09 | Completed | Checked | Completed |
-| 3 | W1.3 | - | Not started | Not checked | Not started |
+| 3 | W1.3 | 2026-09-09 | Completed | Checked | Completed |
 | 4 | W1.4 | - | Not started | Not checked | Not started |
 | 5 | W1.5 | - | Not started | Not checked | Not started |
 | 6 | W1.6 | - | Not started | Not checked | Not started |
@@ -51,15 +51,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 2 assigned readings were BFP 02; selected BFP 07 resource/method/status/pagination sections; RFC 9110 HTTP semantics. Covered selected route, resource, method, status, idempotency, and pagination concepts in guided session.
-- Learner answer or concise evidence: Learner correctly chose `POST /api/v1/projects` over action-style GET for project creation, identified `201 Created`, and explained DELETE idempotency as same final server state even when repeated responses differ. Endpoint-table exercise was mostly correct; corrected task item route to plural `/tasks/{task_id}` and fixed brace typo.
-- Exercise path/result: Endpoint table completed and reviewed; selected `PATCH` for partial updates.
-- Changed files: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/main.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`.
-- Commands and actual results: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `8 passed` and two dependency deprecation warnings. Earlier test run failed because Starlette-generated 405 responses were not caught by the FastAPI HTTPException handler; fixed by handling StarletteHTTPException.
-- Design entry / related ADRs: docs/design.md Day 2 entry completed; no ADRs yet.
-- Untested assumptions: Data is process-local memory only; no persistence, auth, tenant isolation, concurrent write behavior, or database constraints exist yet.
-- Weak concepts: Continue reinforcing the difference between route shape, method semantics, and persistence behavior.
-- Optional work deferred: Deep version migration strategy beyond reserving `/api/v1`.
+- Reading/sections: Day 3 assigned readings were BFP 03 serialization/deserialization and BFP 05 validation/transformation sections. Covered parsing, schema validation, contract validation, domain validation, missing/null PATCH behavior, UUID path parsing, and response boundaries.
+- Learner answer or concise evidence: Learner correctly classified malformed JSON as JSON parsing, empty name as schema validation, unexpected `is_admin` field as contract validation, and forbidden task status jump as domain validation.
+- Exercise path/result: Classification exercise completed and reviewed. Validation tests added for malformed JSON, unknown fields, null/missing PATCH behavior including explicit null task title, status transition conflicts, invalid UUIDs, and response field boundaries.
+- Changed files: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`, `tests/test_validation.py`.
+- Commands and actual results: Initial Day 3 validation tests failed for unknown fields, status transition, and invalid UUID handling; a later explicit-null test exposed that raw `ValueError` objects in validation details needed JSON-safe encoding; after implementation, `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `18 passed` and two dependency deprecation warnings.
+- Design entry / related ADRs: docs/design.md Day 3 entry completed; no ADRs yet.
+- Untested assumptions: No global body-size limit middleware yet; no auth-sensitive response fields exist yet; no persistence constraints exist yet.
+- Weak concepts: Continue reinforcing malformed-ID `422` versus valid-missing-ID `404`.
+- Optional work deferred: Full payload byte-size limits beyond field length validation.
 ## Weekly gates
 - [ ] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -71,11 +71,15 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 3 / W1.3, Orient
-- File/function/section: roadmap.md Day 3; existing `src/taskforge/models.py` and API request/response bodies
-- Next question or exercise: Classify malformed JSON, invalid IDs, oversized fields, forbidden state changes, and unexpected fields by rejection layer.
-- Next build task: Separate create/update/read models more strictly, add payload limits and explicit patch semantics.
+- Module and phase: Day 4 / W1.4, Orient
+- File/function/section: roadmap.md Day 4; route handlers in `src/taskforge/api.py` and storage logic in `src/taskforge/store.py`
+- Next question or exercise: Trace a task update through handler, service, repository/store, and error mapping boundaries.
+- Next build task: Split HTTP handlers from service rules, add request IDs, structured logs, startup config validation, and service tests.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+
+
+
+
 
 
 

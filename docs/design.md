@@ -12,12 +12,12 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-09
-- Roadmap day/module and implementation status: Day 2 / W1.2 completed.
+- Roadmap day/module and implementation status: Day 3 / W1.3 completed.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration and HTTP semantics.
 - Configuration layer: `src/taskforge/config.py` owns application settings loaded from environment variables.
-- Model/contract layer: `src/taskforge/models.py` owns initial request and response shapes.
+- Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, and missing-versus-null semantics.
 - Persistence layer: `src/taskforge/store.py` is process-local in-memory storage only; durable persistence is not implemented.
 - Domain layer: not separately implemented yet.
 - Worker/background layer: not implemented.
@@ -51,12 +51,14 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: `page_size` bounds from 1 through 100 for list endpoints.
 - Implemented: JSON error envelope for expected HTTP and validation errors.
 - Implemented: OpenAPI route generation through FastAPI, with test coverage for Day 2 paths.
-- Planned next: stricter serialization and validation boundaries for Day 3.
+- Planned next: Day 4 layer separation, configuration validation, request IDs, and structured logs.
 
 ### Data ownership and invariants
 - Project and task data currently live only in one API process's memory.
 - Deleting a project deletes its in-memory tasks.
 - Task item routes verify the parent project exists before resolving the task.
+- Path IDs must be valid UUIDs before storage lookup.
+- Task status cannot move directly from `todo` to `done`.
 - PostgreSQL is planned as authoritative storage starting in Week 1, but it has not been introduced.
 
 ### Request and background-job flows
@@ -85,7 +87,7 @@ flowchart LR
 
 ### Known limitations
 - Data is lost when the process restarts.
-- No workspace, auth, tenant isolation, database, worker, readiness check, or CI exists yet.
+- No workspace, auth, tenant isolation, database, worker, readiness check, global payload byte-size limit, or CI exists yet.
 - The current in-memory store is not safe evidence for database isolation, transaction behavior, or multi-process consistency.
 - The test client emits dependency deprecation warnings that do not fail Day 2 but should be watched as dependencies evolve.
 
@@ -155,3 +157,35 @@ Data is not durable. There is no auth, tenant isolation, database transaction, c
 
 #### Related decisions and next design step
 No ADRs. Next design step is Day 3: sharpen request/response models, unknown-field behavior, null/missing PATCH semantics, timestamp handling, and sensitive output boundaries.
+
+### Day 3 - W1.3: Serialization and validation
+- Calendar date(s): 2026-09-09
+- Status: Completed
+
+#### What changed
+Tightened request/response models, rejected unknown fields, parsed path IDs as UUIDs, clarified missing versus null PATCH behavior, rejected empty task PATCH bodies, added a domain rule for task status transitions, and added validation-focused tests.
+
+#### Why the design changed
+Day 2 proved route contracts, but the API still accepted some inputs too loosely. Day 3 made the boundary explicit so client mistakes are visible instead of silently ignored.
+
+#### Boundary placement and ownership
+Pydantic request models own field shape, length, enum, extra-field, and empty-update validation. FastAPI path annotations own UUID parsing. The in-memory store currently owns the task state-transition rule because it needs the existing task state. Routes translate store/domain failures into HTTP status codes.
+
+#### API, data, and compatibility impact
+Malformed UUID path IDs now return `422` before store lookup. Valid UUIDs that are not present still return `404`. Unknown request fields now return `422` instead of being ignored. Direct `todo` to `done` task updates return `409 invalid_state_transition`.
+
+#### Request / job flow
+A request enters FastAPI, parses JSON and UUID path parameters, validates the Pydantic request model, calls the route, applies store/domain rules, and serializes through response models. Jobs are not applicable.
+
+#### Verification and evidence
+- Initial Day 3 validation tests failed for unknown fields, status transition, and invalid UUID handling. A later explicit-null test exposed that validation details containing raw `ValueError` objects must be JSON-encoded before returning them.
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `.\\.venv\\Scripts\\python.exe -m pytest -q`: `18 passed`, with two dependency deprecation warnings.
+
+#### Known limitations after this day
+No global request body byte limit is implemented yet. No auth-sensitive response fields exist yet. Domain rules still live close to the in-memory store and should move into a service layer on Day 4.
+
+#### Related decisions and next design step
+No ADRs. Next design step is Day 4: separate HTTP handlers, service rules, and storage boundaries; add request IDs, structured logs, startup configuration validation, and service tests.
+

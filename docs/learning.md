@@ -132,7 +132,7 @@ Validation results on 2026-09-09:
 - `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
 - `.\.venv\Scripts\python.exe -m pytest -q`: `8 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
 
-A useful failure occurred before the final pass: the wrong-method test expected our error envelope, but 405 responses are raised by Starlette's exception type. Handling `StarletteHTTPException` fixed framework-generated HTTP errors as well as route-raised errors.
+A useful failure occurred before the final pass: a custom Pydantic validator placed a raw `ValueError` object inside validation details, which the JSON response could not serialize. The handler now runs validation details through FastAPI's `jsonable_encoder`.
 
 #### Interview explanation
 A good concise explanation: "TaskForge models projects and nested tasks as resources under `/api/v1`. Creating a project uses `POST /api/v1/projects` because creation changes server state and the server assigns the new ID. A successful create returns `201 Created` and a `Location` header. Reading uses `GET`, deletion uses `DELETE`, and partial changes use `PATCH`. DELETE can still be idempotent even if a repeated call returns a different status, because idempotency is about the final intended server state. List endpoints bound `page_size` to protect the API from unbounded responses."
@@ -146,5 +146,65 @@ A good concise explanation: "TaskForge models projects and nested tasks as resou
 - Learner correctly explained POST versus GET for creation.
 - Learner identified `201 Created`; add `Location` header as the resource URI.
 - Learner correctly explained DELETE idempotency as final-state semantics, not identical responses.
+
+
+
+### Day 3 - W1.3: Serialization and validation
+
+#### Concept and why it exists
+Serialization turns in-memory objects into response bytes. Deserialization turns request bytes into data structures. Validation decides whether the parsed data is acceptable for the API contract and business rules.
+
+Parsing valid JSON is only the first step. A request can be syntactically valid JSON but still fail because a field is empty, an enum value is unsupported, an unknown field is present, or the requested business transition is forbidden.
+
+#### Mental model and small example
+```text
+raw HTTP body -> JSON parsing -> schema validation -> contract validation -> domain validation -> handler/store -> response serialization
+```
+
+Examples:
+
+- `{name: "Launch plan"}` fails JSON parsing because object keys must be quoted.
+- `{"name":""}` fails schema validation because the name is too short.
+- `{"name":"Launch plan","is_admin":true}` should fail contract validation if unknown fields are forbidden.
+- A task status jump from `todo` directly to `done` is a domain validation problem if the API contract says that transition is not allowed.
+
+#### What happens internally
+FastAPI reads the request body, asks the JSON parser to decode it, then uses Pydantic models and parameter annotations to validate shape and types. Route code should handle business rules that need current object state, such as a task's existing status.
+
+#### Boundaries, failure modes, and common mistakes
+- Malformed JSON is not a business-rule problem; the body cannot be decoded.
+- Schema validation handles field types, lengths, enum values, and required fields.
+- Contract validation decides whether extra client fields are allowed or rejected.
+- Domain validation uses application state or business rules, such as allowed task status transitions.
+- Response models prevent accidental output shape drift and later help avoid leaking sensitive fields.
+
+#### Alternatives and trade-offs
+Strict contracts reject unknown fields early and catch client mistakes, but they make clients update when the contract changes. Permissive contracts can be easier during prototyping, but clients may believe ignored fields were honored. TaskForge will prefer explicit accepted fields for learning and safety.
+
+#### TaskForge application
+Day 3 tightened the API boundary:
+
+- Unknown fields are rejected with Pydantic `extra="forbid"` on request models.
+- Path IDs are parsed as UUIDs, so malformed IDs fail before store lookup.
+- PATCH distinguishes missing from null: omitted task fields are left unchanged; null values are not accepted for non-nullable project names.
+- Empty task PATCH bodies are rejected because they request no change.
+- Explicit `null` task titles are rejected even when another field is updated; an omitted title is left unchanged.
+- Task status cannot move directly from `todo` to `done`; that is a domain validation rule enforced by the store for now and mapped to `409` by the route.
+- Response models keep output fields explicit.
+
+#### Exercise and validation observations
+Learner correctly classified malformed JSON, empty name, unexpected `is_admin`, and forbidden task transition by rejection layer.
+
+#### Interview explanation
+A good concise explanation: "TaskForge separates parsing, schema validation, contract validation, and domain validation. Malformed JSON fails before the request model exists. Empty strings, invalid enum values, out-of-bounds page sizes, and malformed UUID path parameters fail schema validation. Unknown request fields fail contract validation because the API does not silently ignore fields like `is_admin`. A task status jump from `todo` directly to `done` is domain validation because it depends on the current task state. Response models define what the API sends back, which prevents accidental output shape drift."
+
+#### Sources: links, sections, required/optional
+- Required: BFP 03 serialization/deserialization.
+- Required: BFP 05 validation and transformations.
+
+#### My questions, corrections, and revision items
+- Learner correctly classified Day 3 rejection layers.
+- Important correction: invalid UUID path shape returns `422`, while a valid UUID that is not in storage returns `404`.
+- Full payload byte-size limits are still deferred; current checks cover field length and page-size bounds.
 
 

@@ -32,3 +32,25 @@
 - Weak areas / incomplete work: Need Day 3 validation depth for unknown fields, null versus missing, and stricter response boundaries.
 - Exact next action: Start Day 3 / W1.3 by classifying malformed JSON, invalid IDs, oversized fields, forbidden state changes, and unexpected fields by rejection layer.
 - Current repository state / relevant uncommitted work: Git is now initialized; README had a prior uncommitted change removing the stale non-Git limitation and was preserved.
+
+## 2026-09-09 - Day 3 / W1.3 - Serialization and validation boundaries
+- Starting point: Day 2 completed with in-memory CRUD, but models still allowed unknown fields and string-shaped IDs.
+- Concepts and work covered: JSON parsing versus schema validation, contract validation, domain validation, missing versus null, UUID path parsing, response field boundaries, and task status transitions.
+- Learner evidence: Learner correctly classified malformed JSON, empty name, unexpected `is_admin`, and forbidden task transition by rejection layer.
+- Files changed: `README.md`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `src/taskforge/api.py`, `src/taskforge/models.py`, `src/taskforge/store.py`, `tests/test_projects_tasks.py`, `tests/test_validation.py`.
+- Commands run and outcomes: Initial Day 3 validation tests failed as expected for missing behavior; final ruff check passed, format check passed, and pytest passed with `17 passed` and two dependency deprecation warnings.
+- Problems and resolutions: Tightening path IDs from strings to UUIDs changed malformed `missing` IDs from `404` to `422`; regression tests were corrected to use valid absent UUIDs when testing missing resources.
+- Weak areas / incomplete work: Global payload byte-size limits and service-layer ownership are deferred to later modules.
+- Exact next action: Start Day 4 / W1.4 by tracing a task update through handler, service, repository/store, and error mapping boundaries.
+- Current repository state / relevant uncommitted work: Day 3 files modified; run `git status --short` for current diff before committing.
+
+## 2026-09-09 - Day 3 / W1.3 - Null handling follow-up
+- Starting point: Day 3 validation was passing with 17 tests, but explicit `null` task title plus another change was not separately covered.
+- Concepts and work covered: Missing versus explicit null in PATCH and JSON-safe validation error detail serialization.
+- Learner evidence: Same Day 3 classification evidence applies.
+- Files changed: `src/taskforge/models.py`, `src/taskforge/main.py`, `tests/test_validation.py`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/project-contract.md`, `docs/session-log.md`.
+- Commands run and outcomes: Ruff check passed; ruff format check passed; pytest passed with `18 passed` and two dependency deprecation warnings.
+- Problems and resolutions: Pydantic validation details included a raw `ValueError`; fixed by encoding `exc.errors()` with FastAPI `jsonable_encoder` before returning JSON.
+- Weak areas / incomplete work: Global request body byte-size limits remain deferred.
+- Exact next action: Start Day 4 / W1.4 with layer separation.
+- Current repository state / relevant uncommitted work: Day 3 files modified; run `git status --short` before committing.

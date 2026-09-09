@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from taskforge.models import (
     ProjectCreate,
@@ -8,18 +8,23 @@ from taskforge.models import (
     ProjectUpdate,
     TaskCreate,
     TaskRead,
+    TaskStatus,
     TaskUpdate,
 )
 
 
+class InvalidStateTransitionError(Exception):
+    pass
+
+
 @dataclass
 class InMemoryStore:
-    projects: dict[str, ProjectRead] = field(default_factory=dict)
-    tasks: dict[str, dict[str, TaskRead]] = field(default_factory=dict)
+    projects: dict[UUID, ProjectRead] = field(default_factory=dict)
+    tasks: dict[UUID, dict[UUID, TaskRead]] = field(default_factory=dict)
 
     def create_project(self, payload: ProjectCreate) -> ProjectRead:
         project = ProjectRead(
-            id=str(uuid4()),
+            id=uuid4(),
             name=payload.name,
             created_at=datetime.now(UTC),
         )
@@ -34,12 +39,12 @@ class InMemoryStore:
         )
         return ordered_projects[:page_size]
 
-    def get_project(self, project_id: str) -> ProjectRead | None:
+    def get_project(self, project_id: UUID) -> ProjectRead | None:
         return self.projects.get(project_id)
 
     def update_project(
         self,
-        project_id: str,
+        project_id: UUID,
         payload: ProjectUpdate,
     ) -> ProjectRead | None:
         project = self.projects.get(project_id)
@@ -49,18 +54,18 @@ class InMemoryStore:
         self.projects[project_id] = updated
         return updated
 
-    def delete_project(self, project_id: str) -> bool:
+    def delete_project(self, project_id: UUID) -> bool:
         if project_id not in self.projects:
             return False
         del self.projects[project_id]
         del self.tasks[project_id]
         return True
 
-    def create_task(self, project_id: str, payload: TaskCreate) -> TaskRead | None:
+    def create_task(self, project_id: UUID, payload: TaskCreate) -> TaskRead | None:
         if project_id not in self.projects:
             return None
         task = TaskRead(
-            id=str(uuid4()),
+            id=uuid4(),
             project_id=project_id,
             title=payload.title,
             status=payload.status,
@@ -69,7 +74,7 @@ class InMemoryStore:
         self.tasks[project_id][task.id] = task
         return task
 
-    def list_tasks(self, project_id: str, page_size: int) -> list[TaskRead] | None:
+    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead] | None:
         project_tasks = self.tasks.get(project_id)
         if project_tasks is None:
             return None
@@ -79,26 +84,26 @@ class InMemoryStore:
         )
         return ordered_tasks[:page_size]
 
-    def get_task(self, project_id: str, task_id: str) -> TaskRead | None:
+    def get_task(self, project_id: UUID, task_id: UUID) -> TaskRead | None:
         return self.tasks.get(project_id, {}).get(task_id)
 
     def update_task(
         self,
-        project_id: str,
-        task_id: str,
+        project_id: UUID,
+        task_id: UUID,
         payload: TaskUpdate,
     ) -> TaskRead | None:
         task = self.get_task(project_id, task_id)
         if task is None:
             return None
+        if task.status == TaskStatus.todo and payload.status == TaskStatus.done:
+            raise InvalidStateTransitionError
         changes = payload.model_dump(exclude_unset=True)
-        if not changes:
-            return task
         updated = task.model_copy(update=changes)
         self.tasks[project_id][task_id] = updated
         return updated
 
-    def delete_task(self, project_id: str, task_id: str) -> bool:
+    def delete_task(self, project_id: UUID, task_id: UUID) -> bool:
         project_tasks = self.tasks.get(project_id)
         if project_tasks is None or task_id not in project_tasks:
             return False

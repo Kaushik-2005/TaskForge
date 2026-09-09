@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 2 / W1.2 is completed. The repository has a minimal FastAPI API with a live health endpoint and in-memory project/task CRUD under `/api/v1`.
+Day 3 / W1.3 is completed. The repository has a minimal FastAPI API with a live health endpoint, in-memory project/task CRUD under `/api/v1`, and stricter request/response validation.
 
 ## Records
 
@@ -62,7 +62,15 @@ python -m pytest -q
 
 Data is in memory and disappears when the API process restarts.
 
+Validation behavior:
+
+- Unknown request fields are rejected.
+- Path IDs must be valid UUIDs.
+- Malformed IDs return `422`; valid missing resources return `404`.
+- Task status cannot change directly from `todo` to `done`.
+
 ## Limitations
 
 - No database, auth, tenant/workspace isolation, durable storage, or CI exists yet.
+
 

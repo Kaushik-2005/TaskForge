@@ -137,7 +137,7 @@ def test_task_routes_require_existing_project_and_bounded_page_size() -> None:
     client = make_client()
 
     missing_project = client.post(
-        "/api/v1/projects/missing/tasks",
+        "/api/v1/projects/00000000-0000-4000-8000-000000000001/tasks",
         json={"title": "No parent"},
     )
     assert missing_project.status_code == 404
@@ -161,7 +161,9 @@ def test_task_routes_require_existing_project_and_bounded_page_size() -> None:
 def test_nested_task_item_routes_report_missing_parent_project() -> None:
     client = make_client()
 
-    response = client.get("/api/v1/projects/missing/tasks/task-1")
+    response = client.get(
+        "/api/v1/projects/00000000-0000-4000-8000-000000000001/tasks/00000000-0000-4000-8000-000000000002"
+    )
 
     assert response.status_code == 404
     assert response.json() == {

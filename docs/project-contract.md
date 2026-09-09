@@ -2,7 +2,7 @@
 
 ## Day 2 scope
 
-TaskForge is a local backend API with a live health endpoint and in-memory project/task CRUD. The Day 2 API is intentionally not durable; persistence starts later in Week 1.
+TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, and stricter serialization/validation boundaries. The API is intentionally not durable; persistence starts later in Week 1.
 
 ## Supported endpoints
 
@@ -33,7 +33,7 @@ Expected HTTP and validation errors use this envelope:
 }
 ```
 
-Validation errors use `422` and `code: validation_error`. Page size is bounded from 1 through 100.
+Validation errors use `422` and `code: validation_error`. Page size is bounded from 1 through 100. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`.
 
 ## Current non-goals
 
@@ -63,6 +63,8 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `8 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
+- Pytest: `18 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
+
+
