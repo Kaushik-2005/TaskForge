@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 4 / W1.4 is completed. The repository has a FastAPI API with a live health endpoint, in-memory project/task CRUD under `/api/v1`, stricter request/response validation, a service layer, request IDs, structured access logs, and startup settings validation.
+Day 5 / W1.5 is completed. The repository has a FastAPI API with in-memory CRUD plus a local PostgreSQL Compose setup, initial relational schema, seed data, and SQL validation scripts.
 
 ## Records
 
@@ -53,6 +53,25 @@ python -m ruff format --check .
 python -m pytest -q
 ```
 
+## Database
+
+Start local PostgreSQL on host port `5433`:
+
+```powershell
+docker compose up -d postgres
+```
+
+Apply schema and seed data inside the container:
+
+```powershell
+docker cp db taskforge-postgres-1:/tmp/taskforge/db
+docker cp tests/sql taskforge-postgres-1:/tmp/taskforge/tests/sql
+docker compose exec -T -w /tmp/taskforge postgres psql -U taskforge -d taskforge -f tests/sql/constraints.sql
+docker compose exec -T -w /tmp/taskforge postgres psql -U taskforge -d taskforge -f tests/sql/queries.sql
+```
+
+The relational model is documented in `docs/relational-model.md`.
+
 ## API endpoints
 
 - `GET /health/live`
@@ -81,6 +100,7 @@ Validation behavior:
 ## Limitations
 
 - No database, auth, tenant/workspace isolation, durable storage, or CI exists yet.
+
 
 
 

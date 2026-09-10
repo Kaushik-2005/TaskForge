@@ -65,3 +65,14 @@
 - Weak areas / incomplete work: Live log inspection, database repository boundaries, and global payload byte-size limits remain future work.
 - Exact next action: Start Day 5 / W1.5 by drawing the relational model and explaining why database constraints backstop API validation.
 - Current repository state / relevant uncommitted work: Day 4 files modified; run `git status --short` before committing.
+
+## 2026-09-10 - Day 5 / W1.5 - Relational model and PostgreSQL constraint lab
+- Starting point: Day 4 completed with in-memory API, service layer, request IDs, structured logs, and startup config validation.
+- Concepts and work covered: Relational entities, primary keys, foreign keys, unique constraints, check constraints, authorized joins, aggregate counts, and why database constraints backstop API validation.
+- Learner evidence: Learner explained referential integrity, membership uniqueness, proposed a users/workspaces/memberships/projects/tasks ER model, and wrote authorized task and project-count SQL queries with minor syntax correction.
+- Files changed: `README.md`, `compose.yaml`, `db/schema.sql`, `db/seed.sql`, `docs/decisions.md`, `docs/project-contract.md`, `docs/relational-model.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `tests/sql/constraints.sql`, `tests/sql/queries.sql`.
+- Commands run and outcomes: Docker and Compose detected. Initial Compose startup timed out; retry showed port `5432` was already allocated. Changed host port to `5433`; PostgreSQL started and became healthy. SQL constraint script passed. SQL query script passed. Ruff check passed, format check passed, pytest passed with `25 passed` and two dependency deprecation warnings.
+- Problems and resolutions: Port conflict on `5432` resolved by mapping local PostgreSQL to host `5433`. SQL query script initially used a nonexistent `fail()` helper; replaced with PL/pgSQL assertions.
+- Weak areas / incomplete work: API still uses in-memory storage. Migration tooling, request-scoped DB sessions, rollback behavior, connection pools, and integration test isolation are Day 6 work.
+- Exact next action: Start Day 6 / W1.6 by explaining request-scoped DB sessions, commit/rollback, and connection pool ownership.
+- Current repository state / relevant uncommitted work: Day 5 files modified; PostgreSQL container may still be running on host port `5433`.

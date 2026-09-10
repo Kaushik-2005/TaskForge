@@ -273,3 +273,47 @@ A good concise explanation: "TaskForge now separates HTTP, application, and stor
 - Reinforce exception handler ownership for validation failures that occur before route handlers run.
 - ADR-001 records the route/service/store boundary decision.
 
+
+### Day 5 - W1.5: Relational modeling and SQL
+
+#### Concept and why it exists
+Relational modeling defines the durable shape of the system: entities, relationships, and invariants. API validation catches bad requests early, but database constraints protect the source of truth from every write path.
+
+#### Mental model and small example
+```text
+users -> memberships -> workspaces -> projects -> tasks
+```
+
+A foreign key says a child row cannot point at a missing parent row. A unique constraint prevents duplicate facts. A check constraint keeps a column inside an allowed domain.
+
+#### What happens internally
+PostgreSQL validates constraints during writes. If an insert or update would violate a foreign key, unique constraint, not-null rule, or check constraint, the database rejects the write even if application code forgot to validate it.
+
+#### Boundaries, failure modes, and common mistakes
+- Do not rely only on API validation for durable data integrity.
+- Foreign keys prevent orphaned rows.
+- `UNIQUE (user_id, workspace_id)` prevents ambiguous memberships.
+- `CHECK` constraints protect finite states such as roles and task statuses.
+- Common mistake: modeling a relationship in code but not enforcing it in the database.
+
+#### Alternatives and trade-offs
+A surrogate `id` on memberships can make references and audit trails easier, but `UNIQUE (user_id, workspace_id)` is still needed because the real-world fact should occur only once. Composite primary keys are also possible, but can become cumbersome when other tables need to reference a membership.
+
+#### TaskForge application
+Learner proposed users, workspaces, memberships, projects, and tasks with UUID primary keys, foreign keys, uniqueness, NOT NULL, and role/status checks. Correction: `password_hash` column name should be spelled consistently.
+
+#### Exercise and validation observations
+Learner correctly explained database referential integrity and membership uniqueness. Learner wrote an authorized task query joining memberships -> projects -> tasks, with a correction for missing SELECT commas. Learner wrote a correct project-count query using LEFT JOIN so projects with zero tasks are included.
+
+#### Interview explanation
+A good concise explanation: "TaskForge uses relational constraints because durable data must remain valid even outside the current API path. Foreign keys prevent orphaned projects and tasks. `UNIQUE (user_id, workspace_id)` prevents ambiguous memberships. CHECK constraints keep roles and task statuses inside allowed sets. The authorized task query joins memberships to projects to tasks so access is proven through workspace membership. A LEFT JOIN with `COUNT(t.id)` includes projects that have zero tasks."
+
+#### Sources: links, sections, required/optional
+- Required: BFP 08 modeling, constraints, queries, transaction overview.
+- Required supplement: PostgreSQL transaction isolation.
+
+#### My questions, corrections, and revision items
+- Decide whether tasks should include `workspace_id` directly or derive workspace ownership through project joins.
+- Practice joins for authorized task lookup and per-project task counts. Day 5 SQL scripts passed against local PostgreSQL on host port 5433.
+
+

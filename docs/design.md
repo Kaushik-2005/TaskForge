@@ -12,7 +12,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-09
-- Roadmap day/module and implementation status: Day 4 / W1.4 completed.
+- Roadmap day/module and implementation status: Day 5 / W1.5 completed.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
@@ -21,7 +21,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, and missing-versus-null semantics.
 - Service layer: `src/taskforge/services.py` owns application rules and missing-resource decisions.
 - Error model: `src/taskforge/errors.py` owns application exception types.
-- Persistence layer: `src/taskforge/store.py` is process-local in-memory storage only; durable persistence is not implemented.
+- Persistence layer: `src/taskforge/store.py` is still process-local in-memory storage for the API. Day 5 added planned PostgreSQL schema files in `db/schema.sql` and `db/seed.sql`, but the runtime API does not use PostgreSQL yet.
 - Worker/background layer: not implemented.
 
 ### File ownership
@@ -61,7 +61,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: request ID response header and JSON access logs without request bodies.
 - Implemented: service-layer task status transition rule.
 - Implemented: OpenAPI route generation through FastAPI, with test coverage for Day 2 paths.
-- Planned next: Day 5 relational model, SQL constraints, and local PostgreSQL setup.
+- Planned next: Day 6 PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback, and integration tests.
 
 ### Data ownership and invariants
 - Project and task data currently live only in one API process's memory.
@@ -69,7 +69,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Task item routes verify the parent project exists before resolving the task through the service layer.
 - Path IDs must be valid UUIDs before storage lookup.
 - Task status cannot move directly from `todo` to `done`; `TaskForgeService` owns this rule.
-- PostgreSQL is planned as authoritative storage starting in Week 1, but it has not been introduced.
+- PostgreSQL has been introduced as a local schema/constraint lab and is planned to become runtime authoritative storage on Day 6.
 
 ### Request and background-job flows
 - Health request flow:
@@ -98,7 +98,7 @@ flowchart LR
 
 ### Known limitations
 - Data is lost when the process restarts.
-- No workspace, auth, tenant isolation, database, worker, readiness check, global payload byte-size limit, or CI exists yet.
+- No runtime database repository, auth, tenant isolation, worker, readiness check, global payload byte-size limit, or CI exists yet.
 - The current in-memory store is not safe evidence for database isolation, transaction behavior, or multi-process consistency.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -232,3 +232,41 @@ Logging has not been inspected manually in a live Uvicorn terminal. There is sti
 
 #### Related decisions and next design step
 Related: ADR-001 in `docs/decisions.md`. Next design step is Day 5: relational modeling, SQL constraints, and local PostgreSQL setup.
+
+### Day 5 - W1.5: Relational modeling and SQL
+- Calendar date(s): 2026-09-10
+- Status: Completed
+
+#### What changed
+Added local PostgreSQL Compose setup on host port `5433`, initial SQL schema, seed data, SQL validation scripts, relational model documentation, and ADR-002. The API still uses the in-memory store; Day 5 is the modeling and database constraint lab.
+
+#### Why the design changed
+TaskForge needs durable integrity rules before the API is wired to PostgreSQL. Database constraints protect data written by any path, not just today's FastAPI handlers.
+
+#### Boundary placement and ownership
+`db/schema.sql` owns the planned relational structure and database-level constraints. `db/seed.sql` owns synthetic seed data. `tests/sql/constraints.sql` owns database integrity evidence. `tests/sql/queries.sql` owns join/query evidence. Runtime reads/writes still go through `InMemoryStore` until Day 6.
+
+#### API, data, and compatibility impact
+No runtime API behavior changed. The planned durable model includes users, workspaces, memberships, projects, and tasks. Tasks belong to workspaces through projects, so authorized task lookup joins memberships, projects, and tasks.
+
+#### Request / job flow
+Runtime request flow is unchanged from Day 4. Database validation flow is manual/lab-only: SQL files are copied into the PostgreSQL container and run with `psql`, then rolled back.
+
+#### Verification and evidence
+- Docker version: 28.0.4.
+- Docker Compose version: v2.34.0-desktop.1.
+- First `docker compose up -d postgres` timed out; retry revealed host port `5432` was allocated.
+- Updated `compose.yaml` to map host `5433` to container `5432`.
+- `docker compose up -d postgres`: succeeded.
+- Container health: `healthy`.
+- `psql -f tests/sql/constraints.sql`: passed and rolled back.
+- `psql -f tests/sql/queries.sql`: passed and rolled back.
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `.\.venv\Scripts\python.exe -m pytest -q`: `25 passed`, with two dependency deprecation warnings.
+
+#### Known limitations after this day
+The API does not use PostgreSQL yet. There is no Alembic migration environment, upgrade path, request-scoped session, repository implementation, or integration test database isolation yet. Index design beyond implicit primary/unique indexes is deferred.
+
+#### Related decisions and next design step
+Related: ADR-002 in `docs/decisions.md`. Next design step is Day 6: persistence and migrations.

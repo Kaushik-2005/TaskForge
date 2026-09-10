@@ -2,7 +2,7 @@
 
 ## Day 2 scope
 
-TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, and startup settings validation. The API is intentionally not durable; persistence starts later in Week 1.
+TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, and a local PostgreSQL relational schema lab. The runtime API is still intentionally in-memory; repository-backed persistence starts on Day 6.
 
 ## Supported endpoints
 
@@ -63,7 +63,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `25 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals.
+- Pytest: `25 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. SQL validation scripts for constraints and queries passed against local PostgreSQL.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
@@ -77,3 +77,17 @@ Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 - Every response includes `X-Request-ID`; a supplied request ID is preserved.
 - Access logs are JSON records with request ID, method, path, status code, and duration. Request bodies are not logged.
 - Invalid startup settings, such as an unsupported environment, prevent app construction.
+
+## Database contract
+
+Day 5 introduces the planned PostgreSQL model in `db/schema.sql` and seed data in `db/seed.sql`.
+
+Current SQL guarantees tested:
+
+- Projects cannot reference a missing workspace.
+- Memberships cannot duplicate `(user_id, workspace_id)`.
+- Tasks cannot use a status outside `todo`, `in_progress`, `done`.
+- Authorized task lookup joins memberships, projects, and tasks.
+- Project task counts include projects with zero tasks.
+
+The API does not use PostgreSQL yet; this is the Day 5 modeling and constraint lab.

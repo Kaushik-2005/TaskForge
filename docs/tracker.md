@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 4 / W1.4 Layers and configuration
-- Calendar date: 2026-09-09
+- Day / module: Day 5 / W1.5 Relational modeling and SQL
+- Calendar date: 2026-09-10
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 4 core requirements completed; next action is to start Day 5 only when requested.
-- Last updated: 2026-09-09
+- Exact current task: Day 5 core requirements completed; next action is to start Day 6 only when requested.
+- Last updated: 2026-09-10
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -17,7 +17,7 @@
 | 2 | W1.2 | 2026-09-09 | Completed | Checked | Completed |
 | 3 | W1.3 | 2026-09-09 | Completed | Checked | Completed |
 | 4 | W1.4 | 2026-09-09 | Completed | Checked | Completed |
-| 5 | W1.5 | - | Not started | Not checked | Not started |
+| 5 | W1.5 | 2026-09-10 | Completed | Checked | Completed |
 | 6 | W1.6 | - | Not started | Not checked | Not started |
 | 7 | W1.7 | - | Not started | Not checked | Not started |
 | 8 | W2.1 | - | Not started | Not checked | Not started |
@@ -51,15 +51,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 4 assigned readings were BFP 06 controllers/services/middleware, BFP 14 settings precedence/startup validation, and BFP 12 error classification. Covered route/service/store ownership, exception mapping, request ID middleware, structured logs, and startup config validation.
-- Learner answer or concise evidence: Learner correctly placed the task status transition rule in the service layer. Learner initially placed validation error-envelope behavior in route handlers, then corrected that invalid UUID validation fails before the route handler runs and should be mapped by exception handling. Learner traced a `todo -> done` task update through route parsing, service rule enforcement, store update only after approval, error mapping, and expected `409 Conflict`.
-- Exercise path/result: Task-update trace exercise completed and reviewed.
-- Changed files: `README.md`, `.env.example`, `docs/project-contract.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `docs/decisions.md`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/errors.py`, `src/taskforge/main.py`, `src/taskforge/services.py`, `src/taskforge/store.py`, `tests/test_app_boundaries.py`, `tests/test_services.py`.
-- Commands and actual results: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `25 passed` and two dependency deprecation warnings. Earlier ruff check found one import-order issue and fixed it with `ruff check . --fix`.
-- Design entry / related ADRs: docs/design.md Day 4 entry completed; ADR-001 accepted in docs/decisions.md.
-- Untested assumptions: Request ID logging is tested through the test client but not observed from a live Uvicorn terminal session; no database-backed repository exists yet.
-- Weak concepts: Keep reinforcing exception handlers versus route handlers for pre-handler validation failures.
-- Optional work deferred: More advanced logging configuration and log shipping.
+- Reading/sections: Day 5 assigned readings were BFP 08 modeling, constraints, queries, transaction overview; PostgreSQL transaction isolation supplement. Covered primary keys, foreign keys, unique constraints, check constraints, joins, and why database constraints backstop API validation.
+- Learner answer or concise evidence: Learner correctly explained that foreign keys enforce referential integrity in the database, unique memberships prevent ambiguous authorization, and proposed an ER model with users, workspaces, memberships, projects, and tasks including UUID primary keys, foreign keys, unique constraints, NOT NULL constraints, and role/status CHECK constraints. Learner wrote correct join queries for authorized tasks and project task counts after a comma syntax correction on the first SELECT list.
+- Exercise path/result: ER model attempted and reviewed. SQL exercises completed: authorized task lookup through memberships/projects/tasks and per-project task counts using LEFT JOIN and COUNT(t.id). Relational model saved in docs/relational-model.md.
+- Changed files: `README.md`, `compose.yaml`, `db/schema.sql`, `db/seed.sql`, `docs/decisions.md`, `docs/project-contract.md`, `docs/relational-model.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `tests/sql/constraints.sql`, `tests/sql/queries.sql`.
+- Commands and actual results: Docker 28.0.4 and Compose v2.34.0 available. First Postgres startup timed out, then port 5432 was unavailable; compose host port changed to 5433. `docker compose up -d postgres` succeeded. Container health became `healthy`. SQL files copied into container. `psql -f tests/sql/constraints.sql` passed and rolled back. `psql -f tests/sql/queries.sql` passed and rolled back. `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `25 passed` and two dependency deprecation warnings.
+- Design entry / related ADRs: docs/design.md Day 5 entry completed; ADR-002 accepted in docs/decisions.md.
+- Untested assumptions: API does not use PostgreSQL yet; migration tooling/Alembic not introduced until Day 6; upgrade migration path not tested.
+- Weak concepts: Continue reinforcing that API validation improves error quality, while database constraints protect durable truth.
+- Optional work deferred: Composite membership primary key alternative; indexes beyond implicit PK/unique indexes; transaction anomaly labs for Day 10.
 ## Weekly gates
 - [ ] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -71,11 +71,16 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 5 / W1.5, Orient
-- File/function/section: roadmap.md Day 5; proposed schema for users/workspaces/memberships/projects/tasks
-- Next question or exercise: Draw the ER model and explain why constraints backstop API validation.
-- Next build task: Add local PostgreSQL Compose configuration and initial relational schema/migration planning.
+- Module and phase: Day 6 / W1.6, Orient
+- File/function/section: roadmap.md Day 6; `db/schema.sql`, `src/taskforge/store.py`, and future PostgreSQL repository boundary
+- Next question or exercise: Explain request-scoped DB sessions, commit/rollback, and connection pool ownership.
+- Next build task: Replace memory storage with PostgreSQL repositories using SQLAlchemy/psycopg and migration tooling.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+
+
+
+
+
 
 
 
