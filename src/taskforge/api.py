@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from typing import Annotated
 from uuid import UUID
 
@@ -17,14 +18,27 @@ from taskforge.models import (
     TaskRead,
     TaskUpdate,
 )
+from taskforge.repositories import PostgresStore
 from taskforge.services import TaskForgeService
 
 router = APIRouter(prefix="/api/v1")
 PageSize = Annotated[int, Query(ge=1, le=100)]
 
 
-def get_service(request: Request) -> TaskForgeService:
-    return request.app.state.service
+def get_service(request: Request) -> Generator[TaskForgeService]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        yield request.app.state.service
+        return
+
+    with session_factory() as session:
+        service = TaskForgeService(PostgresStore(session, request.app.state.settings))
+        try:
+            yield service
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
 
 ServiceDep = Annotated[TaskForgeService, Depends(get_service)]

@@ -11,8 +11,8 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-09
-- Roadmap day/module and implementation status: Day 5 / W1.5 completed.
+- Last updated: 2026-09-10
+- Roadmap day/module and implementation status: Day 6 / W1.6 completed; Day 7 foundation review is next.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
@@ -21,7 +21,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, and missing-versus-null semantics.
 - Service layer: `src/taskforge/services.py` owns application rules and missing-resource decisions.
 - Error model: `src/taskforge/errors.py` owns application exception types.
-- Persistence layer: `src/taskforge/store.py` is still process-local in-memory storage for the API. Day 5 added planned PostgreSQL schema files in `db/schema.sql` and `db/seed.sql`, but the runtime API does not use PostgreSQL yet.
+- Persistence layer: `src/taskforge/repositories.py` owns PostgreSQL CRUD through SQLAlchemy sessions. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings. Alembic migrations live under `migrations/`.
 - Worker/background layer: not implemented.
 
 ### File ownership
@@ -37,7 +37,13 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - `src/taskforge/models.py`: Pydantic models for project/task create, update, and read bodies.
 - `src/taskforge/services.py`: business rules and application operations.
 - `src/taskforge/errors.py`: application exception classes.
-- `src/taskforge/store.py`: in-memory project/task storage.
+- `src/taskforge/store.py`: in-memory project/task storage for focused tests.
+- `src/taskforge/db.py`: SQLAlchemy engine and session factory construction.
+- `src/taskforge/db_models.py`: SQLAlchemy ORM table mappings.
+- `src/taskforge/repositories.py`: PostgreSQL project/task repository implementation.
+- `alembic.ini`: Alembic configuration.
+- `migrations/env.py`: Alembic migration environment.
+- `migrations/versions/0001_initial_schema.py`: initial PostgreSQL schema migration.
 - `tests/test_health.py`: health endpoint smoke test.
 - `tests/test_projects_tasks.py`: Day 2 HTTP contract tests plus UUID-aware missing-resource regression coverage.
 - `tests/test_validation.py`: Day 3 validation tests.
@@ -61,15 +67,15 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: request ID response header and JSON access logs without request bodies.
 - Implemented: service-layer task status transition rule.
 - Implemented: OpenAPI route generation through FastAPI, with test coverage for Day 2 paths.
-- Planned next: Day 6 PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback, and integration tests.
+- Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
 
 ### Data ownership and invariants
-- Project and task data currently live only in one API process's memory.
-- Deleting a project deletes its in-memory tasks.
+- Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting.
+- Deleting a project deletes its tasks through database cascade behavior in PostgreSQL and explicit cleanup in the memory test store.
 - Task item routes verify the parent project exists before resolving the task through the service layer.
 - Path IDs must be valid UUIDs before storage lookup.
 - Task status cannot move directly from `todo` to `done`; `TaskForgeService` owns this rule.
-- PostgreSQL has been introduced as a local schema/constraint lab and is planned to become runtime authoritative storage on Day 6.
+- PostgreSQL is now the default runtime persistence backend. A configured default workspace owns unauthenticated development projects until auth/workspace isolation arrives.
 
 ### Request and background-job flows
 - Health request flow:
@@ -81,7 +87,7 @@ client -> middleware -> FastAPI route -> health handler -> middleware/log -> res
 - Project/task request flow:
 
 ```text
-client -> middleware -> /api/v1 route -> service -> InMemoryStore -> response
+client -> middleware -> /api/v1 route -> request DB session -> service -> PostgresStore -> PostgreSQL -> commit/rollback -> response
 ```
 
 - Background jobs are planned for Week 3 and do not exist.
@@ -92,14 +98,15 @@ flowchart LR
     Client[Client] --> App[FastAPI app]
     App --> Routes[/api/v1 routes]
     Routes --> Service[Service]
-    Service --> Store[In-memory store]
+    Service --> Repo[PostgresStore]
+    Repo --> PG[(PostgreSQL)]
     App --> Logs[Request logs]
 ```
 
 ### Known limitations
-- Data is lost when the process restarts.
-- No runtime database repository, auth, tenant isolation, worker, readiness check, global payload byte-size limit, or CI exists yet.
-- The current in-memory store is not safe evidence for database isolation, transaction behavior, or multi-process consistency.
+- Data survives API process restart when the PostgreSQL backend is used.
+- No authentication, tenant authorization, worker, readiness check, global payload byte-size limit, or CI exists yet.
+- Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
 
@@ -123,6 +130,13 @@ Added `GET /health/live`, returning `200 {"status":"ok"}`. No database schema, a
 
 #### Request / job flow
 A client request reaches Uvicorn, then FastAPI routing, then the health handler. The handler returns a static JSON body. Jobs are not applicable.
+
+```mermaid
+flowchart LR
+    Client[Client] --> Uvicorn[Uvicorn]
+    Uvicorn --> API[FastAPI]
+    API --> Health[Health route]
+```
 
 #### Verification and evidence
 - `python --version`: Python 3.12.0.
@@ -158,6 +172,14 @@ Added project routes at `/api/v1/projects` and nested task routes at `/api/v1/pr
 #### Request / job flow
 A request entered FastAPI, matched a `/api/v1` route, validated path/query/body inputs, called the route handler, read or mutated `InMemoryStore`, and returned a JSON response. Jobs were not applicable.
 
+```mermaid
+flowchart LR
+    Client[Client] --> API[FastAPI]
+    API --> Route[/api/v1 route]
+    Route --> Store[InMemoryStore]
+    Store --> Route
+```
+
 #### Verification and evidence
 - `.\.venv\Scripts\python.exe -m ruff check .`: passed.
 - `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
@@ -189,6 +211,14 @@ Malformed UUID path IDs return `422` before store lookup. Valid UUIDs that are n
 #### Request / job flow
 A request entered FastAPI, parsed JSON and UUID path parameters, validated the Pydantic request model, called the route, applied store/domain rules, and serialized through response models. Jobs were not applicable.
 
+```mermaid
+flowchart LR
+    Body[JSON body] --> Validate[Pydantic validation]
+    Validate --> Route[Route handler]
+    Route --> Store[InMemoryStore]
+    Route --> Response[Response model]
+```
+
 #### Verification and evidence
 - Initial Day 3 validation tests failed for unknown fields, status transition, and invalid UUID handling. A later explicit-null test exposed that validation details containing raw `ValueError` objects must be JSON-encoded before returning them.
 - `.\.venv\Scripts\python.exe -m ruff check .`: passed.
@@ -219,6 +249,15 @@ No intentional endpoint shape change. Responses now include `X-Request-ID`. Acce
 
 #### Request / job flow
 A request enters middleware, receives or preserves a request ID, passes through FastAPI validation and route handling, calls the service, uses the store for temporary data, returns a response, adds `X-Request-ID`, and writes a structured log record. Jobs are not applicable.
+
+```mermaid
+flowchart LR
+    Client[Client] --> Middleware[Request ID middleware]
+    Middleware --> Route[Route]
+    Route --> Service[TaskForgeService]
+    Service --> Store[InMemoryStore]
+    Middleware --> Log[JSON access log]
+```
 
 #### Verification and evidence
 - `.\.venv\Scripts\python.exe -m ruff check .`: passed.
@@ -252,6 +291,22 @@ No runtime API behavior changed. The planned durable model includes users, works
 #### Request / job flow
 Runtime request flow is unchanged from Day 4. Database validation flow is manual/lab-only: SQL files are copied into the PostgreSQL container and run with `psql`, then rolled back.
 
+```mermaid
+flowchart LR
+    SQL[SQL files] --> PSQL[psql in container]
+    PSQL --> PG[PostgreSQL]
+    PG --> Constraints[FK/UNIQUE/CHECK]
+    PG --> Queries[Join/count checks]
+```
+
+```mermaid
+erDiagram
+    USERS ||--o{ MEMBERSHIPS : has
+    WORKSPACES ||--o{ MEMBERSHIPS : includes
+    WORKSPACES ||--o{ PROJECTS : owns
+    PROJECTS ||--o{ TASKS : contains
+```
+
 #### Verification and evidence
 - Docker version: 28.0.4.
 - Docker Compose version: v2.34.0-desktop.1.
@@ -270,3 +325,51 @@ The API does not use PostgreSQL yet. There is no Alembic migration environment, 
 
 #### Related decisions and next design step
 Related: ADR-002 in `docs/decisions.md`. Next design step is Day 6: persistence and migrations.
+
+
+### Day 6 - W1.6: Persistence and migrations
+- Calendar date(s): 2026-09-10
+- Status: Completed
+
+#### What changed
+Added SQLAlchemy/psycopg dependencies, Alembic migration tooling, ORM mappings, a PostgreSQL repository, request-scoped database sessions, finite pool settings, isolated PostgreSQL integration tests, and PostgreSQL as the default runtime storage backend. Memory storage remains available for focused tests.
+
+#### Why the design changed
+The API needed durable CRUD behavior. Process memory could prove route contracts, but it could not survive restart, enforce database transactions, or prepare for authorization and background work.
+
+#### Boundary placement and ownership
+`src/taskforge/main.py` owns app construction, engine creation, pool settings, and lifespan disposal. `src/taskforge/api.py` owns the request-scoped session dependency: create service/repository, commit after success, rollback on exception, close the session. `src/taskforge/services.py` owns business rules and depends on a store protocol. `src/taskforge/repositories.py` owns SQL data access and uses `flush()` without committing. `migrations/` owns schema changes; requests do not run migrations.
+
+#### API, data, and compatibility impact
+Endpoint shapes did not intentionally change. With `TASKFORGE_STORAGE_BACKEND=postgres`, project/task data is durable and survives a new app instance. The unauthenticated development API writes projects into a configured default workspace. Existing API tests explicitly use the memory backend so they stay focused on contract behavior.
+
+#### Request / job flow
+A PostgreSQL-backed request enters middleware, passes FastAPI validation, opens a request-scoped SQLAlchemy session, builds a service with `PostgresStore`, executes repository SQL, commits after the handler succeeds, rolls back on exception, closes the session, and returns/logs the response. Jobs are not applicable yet.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Service
+    participant Repo
+    participant PG as PostgreSQL
+    Client->>API: HTTP request
+    API->>API: open session
+    API->>Service: call operation
+    Service->>Repo: data access
+    Repo->>PG: SQL + flush
+    API->>PG: commit or rollback
+```
+
+#### Verification and evidence
+- `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"`: installed Alembic, SQLAlchemy, and psycopg dependencies.
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `.\.venv\Scripts\python.exe -m pytest -q`: `28 passed`, with two dependency deprecation warnings.
+- `tests/test_postgres_persistence.py` creates/drops isolated PostgreSQL databases, runs Alembic migrations, verifies persisted data across app instances, and verifies rollback removes uncommitted multi-step work. Manual API testing also verified that a created project still appears after stopping and restarting Uvicorn.
+
+#### Known limitations after this day
+Authentication and real workspace authorization are still absent. The default workspace is a local development bridge, not a security model. The existing developer `taskforge` database may contain Day 5 manual schema without Alembic version state; use a fresh database or deliberate migration stamping before treating that database as migrated. N+1 query behavior has not been measured.
+
+#### Related decisions and next design step
+Related: ADR-003 in `docs/decisions.md`. Learner explained total pool demand across worker processes. Next design step is Day 7 foundation review.

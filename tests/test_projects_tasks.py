@@ -1,10 +1,13 @@
 from fastapi.testclient import TestClient
 
+from taskforge.config import Settings
 from taskforge.main import create_app
 
 
 def make_client() -> TestClient:
-    return TestClient(create_app())
+    return TestClient(
+        create_app(Settings(environment="test", storage_backend="memory"))
+    )
 
 
 def create_project(client: TestClient, name: str = "Launch plan") -> dict[str, str]:

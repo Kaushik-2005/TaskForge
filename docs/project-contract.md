@@ -2,7 +2,7 @@
 
 ## Day 2 scope
 
-TaskForge is a local backend API with a live health endpoint, in-memory project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, and a local PostgreSQL relational schema lab. The runtime API is still intentionally in-memory; repository-backed persistence starts on Day 6.
+TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, and PostgreSQL-backed runtime persistence by default. Memory storage remains available only for focused tests.
 
 ## Supported endpoints
 
@@ -13,7 +13,7 @@ TaskForge is a local backend API with a live health endpoint, in-memory project/
 | GET | `/api/v1/projects?page_size=20` | List projects in creation order. | `200 list[ProjectRead]` |
 | GET | `/api/v1/projects/{project_id}` | Read one project. | `200 ProjectRead` |
 | PATCH | `/api/v1/projects/{project_id}` | Partially update a project's name. | `200 ProjectRead` |
-| DELETE | `/api/v1/projects/{project_id}` | Delete one project and its in-memory tasks. | `204 No Content` |
+| DELETE | `/api/v1/projects/{project_id}` | Delete one project and its tasks. | `204 No Content` |
 | POST | `/api/v1/projects/{project_id}/tasks` | Create a task under a project. | `201 TaskRead`, with `Location` header |
 | GET | `/api/v1/projects/{project_id}/tasks?page_size=20` | List tasks for a project in creation order. | `200 list[TaskRead]` |
 | GET | `/api/v1/projects/{project_id}/tasks/{task_id}` | Read one task under a project. | `200 TaskRead` |
@@ -38,7 +38,7 @@ Validation errors use `422` and `code: validation_error`. Page size is bounded f
 ## Current non-goals
 
 - No authentication or sessions yet.
-- No database or persistence yet; all project/task data is process-local memory.
+- No authentication-backed user/workspace isolation yet; the unauthenticated development API writes projects into a configured default workspace.
 - No tenant/workspace authorization yet.
 - No readiness/dependency health yet.
 - No public deployment profile yet.
@@ -51,7 +51,7 @@ Validation errors use `422` and `code: validation_error`. Page size is bounded f
 
 ## Validation evidence
 
-Executed on 2026-09-09:
+Latest core validation executed on 2026-09-10:
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
@@ -63,7 +63,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `25 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. SQL validation scripts for constraints and queries passed against local PostgreSQL.
+- Pytest: `28 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
@@ -73,14 +73,14 @@ Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
 - Route handlers own HTTP status codes, response headers, and mapping service errors to HTTP errors.
 - `TaskForgeService` owns business rules such as task status transitions.
-- `InMemoryStore` owns process-local data access only.
+- `PostgresStore` owns runtime SQL data access. `InMemoryStore` remains available for focused tests only.
 - Every response includes `X-Request-ID`; a supplied request ID is preserved.
 - Access logs are JSON records with request ID, method, path, status code, and duration. Request bodies are not logged.
 - Invalid startup settings, such as an unsupported environment, prevent app construction.
 
 ## Database contract
 
-Day 5 introduces the planned PostgreSQL model in `db/schema.sql` and seed data in `db/seed.sql`.
+Day 6 introduces Alembic migrations and SQLAlchemy/psycopg runtime persistence. Day 5 SQL files remain as relational modeling lab material.
 
 Current SQL guarantees tested:
 
@@ -90,4 +90,4 @@ Current SQL guarantees tested:
 - Authorized task lookup joins memberships, projects, and tasks.
 - Project task counts include projects with zero tasks.
 
-The API does not use PostgreSQL yet; this is the Day 5 modeling and constraint lab.
+The default runtime backend uses PostgreSQL through request-scoped SQLAlchemy sessions. Repository methods flush changes but do not commit. The request dependency commits once after a successful handler or rolls back on exception.

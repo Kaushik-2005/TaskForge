@@ -76,3 +76,47 @@
 - Weak areas / incomplete work: API still uses in-memory storage. Migration tooling, request-scoped DB sessions, rollback behavior, connection pools, and integration test isolation are Day 6 work.
 - Exact next action: Start Day 6 / W1.6 by explaining request-scoped DB sessions, commit/rollback, and connection pool ownership.
 - Current repository state / relevant uncommitted work: Day 5 files modified; PostgreSQL container may still be running on host port `5433`.
+
+## 2026-09-10 - Day 6 / W1.6 - PostgreSQL persistence implementation
+- Starting point: Day 5 completed with PostgreSQL schema/query labs, but runtime API still used in-memory storage.
+- Concepts and work covered: Request-scoped sessions, commit/rollback ownership, repository flush without commit, migration ownership, isolated test databases, and PostgreSQL repository boundaries.
+- Learner evidence: Learner correctly explained atomic rollback for a multi-step operation and distinguished `flush()` from `commit()`.
+- Files changed: `.env.example`, `README.md`, `alembic.ini`, `migrations/`, `pyproject.toml`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/db.py`, `src/taskforge/db_models.py`, `src/taskforge/main.py`, `src/taskforge/repositories.py`, `src/taskforge/services.py`, tests, and Day 6 docs.
+- Commands run and outcomes: Installed new dependencies with `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"`. `.\.venv\Scripts\python.exe -m ruff check .` passed. `.\.venv\Scripts\python.exe -m ruff format --check .` passed. `.\.venv\Scripts\python.exe -m pytest -q` passed with `28 passed` and two dependency warnings.
+- Problems and resolutions: Normal patch tool remained unavailable because the Windows sandbox helper was missing; scoped PowerShell writes were used. FastAPI `on_event` shutdown warning was removed by switching to lifespan disposal. Alembic path separator warning was removed with `path_separator = os`.
+- Weak areas / incomplete work: Learner still needs to explain total database connection demand across multiple API processes before Day 6 is complete.
+- Exact next action: Ask the pool-demand question, then mark Day 6 complete if answered correctly and prepare Day 7 foundation review.
+- Current repository state / relevant uncommitted work: Day 6 persistence files and docs are modified/uncommitted; PostgreSQL container may still be running on host port `5433`.
+
+## 2026-09-10 - Day 6 / W1.6 - Completion check
+- Starting point: Day 6 implementation was validated; pool-demand understanding check remained open.
+- Concepts and work covered: Total PostgreSQL connection demand across multiple API worker processes.
+- Learner evidence: Learner correctly calculated `(pool_size + max_overflow) * worker_processes`; for 4 workers with pool size 5 and overflow 2, maximum demand is 28 connections because each worker process owns its own pool.
+- Files changed: `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`.
+- Commands run and outcomes: No validation commands needed; documentation-only completion update.
+- Problems and resolutions: None.
+- Weak areas / incomplete work: Existing developer database migration state may need cleanup/stamping before using it as an Alembic-managed database.
+- Exact next action: Start Day 7 / W1.7 foundation review when requested.
+- Current repository state / relevant uncommitted work: Day 6 implementation and documentation changes remain uncommitted.
+
+## 2026-09-10 - Day 6 / W1.6 - Alembic URL precedence fix
+- Starting point: Manual `python -m alembic upgrade head` with `TASKFORGE_DATABASE_URL` set still attempted to use the `alembic.ini` URL, causing `DuplicateTable` against an existing schema.
+- Concepts and work covered: Migration configuration precedence and why manual tests must target the intended database.
+- Learner evidence: Learner surfaced the actual migration traceback from manual testing.
+- Files changed: `migrations/env.py`, `docs/session-log.md`.
+- Commands run and outcomes: `.\.venv\Scripts\python.exe -m ruff check .` passed. `.\.venv\Scripts\python.exe -m ruff format --check .` passed. `.\.venv\Scripts\python.exe -m pytest -q tests\test_postgres_persistence.py` passed with `3 passed` and two dependency warnings.
+- Problems and resolutions: Fixed `migrations/env.py` so `TASKFORGE_DATABASE_URL` takes precedence over the default URL in `alembic.ini`.
+- Weak areas / incomplete work: Be explicit about which database a migration command targets.
+- Exact next action: Recreate or choose a clean manual database, set `TASKFORGE_DATABASE_URL`, and rerun `python -m alembic upgrade head`.
+- Current repository state / relevant uncommitted work: Day 6 implementation plus Alembic URL precedence fix remain uncommitted.
+
+## 2026-09-10 - Day 6 / W1.6 - Manual persistence verification
+- Starting point: PostgreSQL persistence implementation and Alembic URL precedence fix were complete; manual API persistence needed confirmation.
+- Concepts and work covered: Runtime persistence across API process restart.
+- Learner evidence: Learner created a project through the API, stopped Uvicorn, restarted Uvicorn, and confirmed the project still appeared in `GET /api/v1/projects`.
+- Files changed: `docs/tracker.md`, `docs/design.md`, `docs/session-log.md`.
+- Commands run and outcomes: Manual curl commands run by learner; create/list worked after correcting PowerShell JSON quoting; list still worked after Uvicorn restart.
+- Problems and resolutions: PowerShell curl JSON quoting initially produced `422 json_invalid`; resolved by using single quotes around JSON without backslashes.
+- Weak areas / incomplete work: None for Day 6 manual persistence.
+- Exact next action: Commit Day 6 changes or start Day 7 / W1.7 foundation review when requested.
+- Current repository state / relevant uncommitted work: Day 6 implementation and documentation changes remain uncommitted.

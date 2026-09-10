@@ -21,3 +21,14 @@
 - Trade-offs and consequences: UUIDs are wider than integer keys and less naturally ordered. A membership surrogate `id` means `(user_id, workspace_id)` still needs a unique constraint to prevent duplicate membership facts.
 - Evidence: `tests/sql/constraints.sql` proves PostgreSQL rejects broken project/workspace references, duplicate memberships, and invalid task statuses. `tests/sql/queries.sql` proves authorized task lookup and zero-task project counts.
 - Revisit trigger: Revisit if query plans later show UUID/index costs as a measured bottleneck or if membership rows need a composite primary key for a specific integration.
+
+## ADR-003: Use request-scoped SQLAlchemy sessions for PostgreSQL persistence
+- Date and module: 2026-09-10, Day 6 / W1.6
+- Status: Accepted
+- Context / constraints: TaskForge needs durable CRUD without allowing partial commits inside multi-step operations. The API is synchronous FastAPI code, and PostgreSQL is local through Compose.
+- Alternatives considered: Keep memory storage as the runtime path; use one global SQLAlchemy session; let each repository method commit independently; create one request-scoped session and commit once at the boundary.
+- Decision: The app owns the SQLAlchemy engine and finite connection pool. The FastAPI dependency creates one session per request, builds a service with a PostgreSQL repository, commits once after success, rolls back on exception, and closes the session. Repository methods may flush but do not commit.
+- Reason: This preserves atomicity for multi-step service operations and prevents transaction/session state from leaking across requests.
+- Trade-offs and consequences: Existing unit-style API tests must explicitly select the memory backend. Runtime startup now requires the database schema to be migrated before PostgreSQL-backed endpoints are used.
+- Evidence: `tests/test_postgres_persistence.py` runs Alembic against isolated temporary PostgreSQL databases, verifies persisted data survives a new app instance, and verifies rollback removes uncommitted multi-step work.
+- Revisit trigger: Revisit when async database access, explicit unit-of-work objects, or authenticated workspace scoping arrives.

@@ -1,7 +1,8 @@
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response, status
@@ -12,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from taskforge.api import router
 from taskforge.config import Settings, get_settings
+from taskforge.db import create_db_engine, create_session_factory
 from taskforge.services import TaskForgeService
 from taskforge.store import InMemoryStore
 
@@ -27,9 +29,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
 
-    app = FastAPI(title=settings.app_name)
-    app.state.store = InMemoryStore()
-    app.state.service = TaskForgeService(app.state.store)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        engine = getattr(app.state, "engine", None)
+        if engine is not None:
+            engine.dispose()
+
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app.state.settings = settings
+    if settings.storage_backend == "postgres":
+        engine = create_db_engine(settings)
+        app.state.engine = engine
+        app.state.session_factory = create_session_factory(engine)
+    else:
+        app.state.store = InMemoryStore()
+        app.state.service = TaskForgeService(app.state.store)
 
     @app.middleware("http")
     async def request_context_middleware(

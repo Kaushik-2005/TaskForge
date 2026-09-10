@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 5 / W1.5 is completed. The repository has a FastAPI API with in-memory CRUD plus a local PostgreSQL Compose setup, initial relational schema, seed data, and SQL validation scripts.
+Day 6 / W1.6 is in progress. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, and isolated PostgreSQL integration tests. Memory storage remains available for focused unit-style tests.
 
 ## Records
 
@@ -31,6 +31,8 @@ Optional local environment variables are shown in `.env.example`:
 ```powershell
 TASKFORGE_ENVIRONMENT=local
 TASKFORGE_LOG_LEVEL=INFO
+TASKFORGE_STORAGE_BACKEND=postgres
+TASKFORGE_DATABASE_URL=postgresql+psycopg://taskforge:taskforge_dev_password@127.0.0.1:5433/taskforge
 ```
 
 Run the API:
@@ -61,16 +63,13 @@ Start local PostgreSQL on host port `5433`:
 docker compose up -d postgres
 ```
 
-Apply schema and seed data inside the container:
+For runtime development, apply Alembic migrations from the host:
 
 ```powershell
-docker cp db taskforge-postgres-1:/tmp/taskforge/db
-docker cp tests/sql taskforge-postgres-1:/tmp/taskforge/tests/sql
-docker compose exec -T -w /tmp/taskforge postgres psql -U taskforge -d taskforge -f tests/sql/constraints.sql
-docker compose exec -T -w /tmp/taskforge postgres psql -U taskforge -d taskforge -f tests/sql/queries.sql
+python -m alembic upgrade head
 ```
 
-The relational model is documented in `docs/relational-model.md`.
+The Day 5 SQL lab scripts remain available for constraint/query practice. They copy SQL into the container and roll back their checks. The relational model is documented in `docs/relational-model.md`.
 
 ## API endpoints
 
@@ -86,7 +85,7 @@ The relational model is documented in `docs/relational-model.md`.
 - `PATCH /api/v1/projects/{project_id}/tasks/{task_id}`
 - `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
 
-Data is in memory and disappears when the API process restarts.
+With the default `postgres` backend, project/task data is durable in PostgreSQL and survives API process restarts. Tests that need fast in-memory behavior explicitly pass `storage_backend='memory'`.
 
 Validation behavior:
 
@@ -99,7 +98,7 @@ Validation behavior:
 
 ## Limitations
 
-- No database, auth, tenant/workspace isolation, durable storage, or CI exists yet.
+- No authentication, tenant/workspace authorization, readiness/dependency health, public deployment profile, or CI exists yet.
 
 
 

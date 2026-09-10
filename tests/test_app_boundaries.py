@@ -20,7 +20,9 @@ def test_invalid_environment_prevents_startup(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_request_id_header_is_generated() -> None:
-    client = TestClient(create_app(Settings(environment="test")))
+    client = TestClient(
+        create_app(Settings(environment="test", storage_backend="memory"))
+    )
 
     response = client.get("/health/live")
 
@@ -29,7 +31,9 @@ def test_request_id_header_is_generated() -> None:
 
 
 def test_request_id_header_is_preserved() -> None:
-    client = TestClient(create_app(Settings(environment="test")))
+    client = TestClient(
+        create_app(Settings(environment="test", storage_backend="memory"))
+    )
 
     response = client.get("/health/live", headers={"X-Request-ID": "req-123"})
 
@@ -40,7 +44,9 @@ def test_request_id_header_is_preserved() -> None:
 def test_access_log_is_structured_and_omits_body(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    client = TestClient(create_app(Settings(environment="test")))
+    client = TestClient(
+        create_app(Settings(environment="test", storage_backend="memory"))
+    )
 
     with caplog.at_level(logging.INFO, logger="taskforge.api"):
         response = client.post(

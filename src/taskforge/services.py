@@ -1,3 +1,4 @@
+from typing import Protocol
 from uuid import UUID
 
 from taskforge.errors import (
@@ -14,11 +15,32 @@ from taskforge.models import (
     TaskStatus,
     TaskUpdate,
 )
-from taskforge.store import InMemoryStore
+
+
+class TaskForgeStore(Protocol):
+    def create_project(self, payload: ProjectCreate) -> ProjectRead: ...
+    def list_projects(self, page_size: int) -> list[ProjectRead]: ...
+    def get_project(self, project_id: UUID) -> ProjectRead | None: ...
+    def update_project(
+        self,
+        project_id: UUID,
+        payload: ProjectUpdate,
+    ) -> ProjectRead | None: ...
+    def delete_project(self, project_id: UUID) -> bool: ...
+    def create_task(self, project_id: UUID, payload: TaskCreate) -> TaskRead | None: ...
+    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead] | None: ...
+    def get_task(self, project_id: UUID, task_id: UUID) -> TaskRead | None: ...
+    def update_task(
+        self,
+        project_id: UUID,
+        task_id: UUID,
+        payload: TaskUpdate,
+    ) -> TaskRead | None: ...
+    def delete_task(self, project_id: UUID, task_id: UUID) -> bool: ...
 
 
 class TaskForgeService:
-    def __init__(self, store: InMemoryStore) -> None:
+    def __init__(self, store: TaskForgeStore) -> None:
         self.store = store
 
     def create_project(self, payload: ProjectCreate) -> ProjectRead:

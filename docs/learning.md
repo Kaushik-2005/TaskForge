@@ -317,3 +317,31 @@ A good concise explanation: "TaskForge uses relational constraints because durab
 - Practice joins for authorized task lookup and per-project task counts. Day 5 SQL scripts passed against local PostgreSQL on host port 5433.
 
 
+
+### Day 6 - W1.6: Persistence and migrations
+#### Concept and why it exists
+A durable API cannot keep project and task data only in process memory. PostgreSQL must become the authoritative store, and each request must use a controlled unit of work so related writes are atomic.
+
+#### Mental model and small example
+A request borrows database access for a short time, performs repository operations through the service, then commits once if the whole operation succeeds. If any required step fails, the transaction rolls back so no partial state remains.
+
+#### What happens internally
+A connection pool owns a finite number of reusable database connections. A request-scoped SQLAlchemy session uses a connection when it needs to run SQL and participates in a transaction. Repository methods should normally `add` or `flush` changes, not commit independently. The transaction boundary commits or rolls back and returns the connection to the pool.
+
+#### Boundaries, failure modes, and common mistakes
+A common mistake is committing inside each repository method. That can leave partial durable state when a later step in the same logical operation fails. Another mistake is using one global session across requests, which can leak transaction state and is unsafe under concurrency.
+
+#### TaskForge application
+Day 6 will keep the service as the business-rule boundary while replacing process-local storage with PostgreSQL-backed repositories. Migrations must run separately from requests, and integration tests must use isolated PostgreSQL state rather than developer data.
+
+#### Exercise and validation observations
+Learner correctly identified the partial-state failure from per-repository commits: project committed, first default task committed, second task fails, and later rollback cannot undo earlier commits. Learner also correctly explained that `flush()` sends SQL within the current transaction while `commit()` permanently completes the transaction.
+
+#### Interview explanation
+For a multi-step business operation, repositories should not independently commit. They should write or flush inside the current transaction. The request/session boundary commits once after the service operation succeeds or rolls back if any required step fails, preserving atomicity.
+
+#### Sources: links, sections, required/optional
+Roadmap Day 6: BFP 08 database access; BFP 22 integration tests/fixtures.
+
+#### My questions, corrections, and revision items
+Learner correctly identified that a project plus default tasks created in one logical operation should commit once after all steps succeed, with rollback on failure. Learner correctly explained total connection pool demand across processes: each worker has an independent pool, so maximum demand is `(pool_size + max_overflow) * worker_processes`; for 4 workers with pool size 5 and overflow 2, that is 28 connections.

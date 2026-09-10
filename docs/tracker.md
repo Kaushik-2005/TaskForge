@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 5 / W1.5 Relational modeling and SQL
+- Day / module: Day 6 / W1.6 Persistence and migrations
 - Calendar date: 2026-09-10
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 5 core requirements completed; next action is to start Day 6 only when requested.
+- Exact current task: Day 6 completed; next action is to start Day 7 foundation review only when requested.
 - Last updated: 2026-09-10
 
 ## Day-by-day progress
@@ -18,7 +18,7 @@
 | 3 | W1.3 | 2026-09-09 | Completed | Checked | Completed |
 | 4 | W1.4 | 2026-09-09 | Completed | Checked | Completed |
 | 5 | W1.5 | 2026-09-10 | Completed | Checked | Completed |
-| 6 | W1.6 | - | Not started | Not checked | Not started |
+| 6 | W1.6 | 2026-09-10 | Completed | Checked | Completed |
 | 7 | W1.7 | - | Not started | Not checked | Not started |
 | 8 | W2.1 | - | Not started | Not checked | Not started |
 | 9 | W2.2 | - | Not started | Not checked | Not started |
@@ -51,15 +51,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 5 assigned readings were BFP 08 modeling, constraints, queries, transaction overview; PostgreSQL transaction isolation supplement. Covered primary keys, foreign keys, unique constraints, check constraints, joins, and why database constraints backstop API validation.
-- Learner answer or concise evidence: Learner correctly explained that foreign keys enforce referential integrity in the database, unique memberships prevent ambiguous authorization, and proposed an ER model with users, workspaces, memberships, projects, and tasks including UUID primary keys, foreign keys, unique constraints, NOT NULL constraints, and role/status CHECK constraints. Learner wrote correct join queries for authorized tasks and project task counts after a comma syntax correction on the first SELECT list.
-- Exercise path/result: ER model attempted and reviewed. SQL exercises completed: authorized task lookup through memberships/projects/tasks and per-project task counts using LEFT JOIN and COUNT(t.id). Relational model saved in docs/relational-model.md.
-- Changed files: `README.md`, `compose.yaml`, `db/schema.sql`, `db/seed.sql`, `docs/decisions.md`, `docs/project-contract.md`, `docs/relational-model.md`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`, `tests/sql/constraints.sql`, `tests/sql/queries.sql`.
-- Commands and actual results: Docker 28.0.4 and Compose v2.34.0 available. First Postgres startup timed out, then port 5432 was unavailable; compose host port changed to 5433. `docker compose up -d postgres` succeeded. Container health became `healthy`. SQL files copied into container. `psql -f tests/sql/constraints.sql` passed and rolled back. `psql -f tests/sql/queries.sql` passed and rolled back. `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `25 passed` and two dependency deprecation warnings.
-- Design entry / related ADRs: docs/design.md Day 5 entry completed; ADR-002 accepted in docs/decisions.md.
-- Untested assumptions: API does not use PostgreSQL yet; migration tooling/Alembic not introduced until Day 6; upgrade migration path not tested.
-- Weak concepts: Continue reinforcing that API validation improves error quality, while database constraints protect durable truth.
-- Optional work deferred: Composite membership primary key alternative; indexes beyond implicit PK/unique indexes; transaction anomaly labs for Day 10.
+- Reading/sections: Day 6 assigned readings are BFP 08 database access and BFP 22 integration tests/fixtures; to cover connection pools, request-scoped sessions, commit/rollback, migrations, N+1 awareness, and isolated test databases.
+- Learner answer or concise evidence: Learner correctly explained that a multi-step request should be atomic and that repositories should generally add/flush while one commit happens at the request/service transaction boundary after the whole service operation succeeds. Learner also correctly calculated pool demand as `(pool_size + max_overflow) * worker_processes`, e.g. `(5 + 2) * 4 = 28`, because each process owns its own pool.
+- Exercise path/result: Learner explained that internal repository commits can leave project committed and task 1 committed when task 2 fails, and correctly distinguished flush from commit: flush sends SQL inside the current transaction while commit makes the transaction permanent.
+- Changed files: `.env.example`, `README.md`, `alembic.ini`, `migrations/env.py`, `migrations/versions/0001_initial_schema.py`, `pyproject.toml`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/db.py`, `src/taskforge/db_models.py`, `src/taskforge/main.py`, `src/taskforge/repositories.py`, `src/taskforge/services.py`, existing memory-backed tests, `tests/test_postgres_persistence.py`, and Day 6 docs.
+- Commands and actual results: Dependencies installed with `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"`. Final validation: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `28 passed` and two dependency warnings. PostgreSQL integration tests created and dropped isolated temporary databases. Manual test also verified creating a project through the API, stopping Uvicorn, restarting Uvicorn, and listing the same project from PostgreSQL-backed storage.
+- Design entry / related ADRs: ADR-003 accepted; docs/design.md Day 6 entry added with a PostgreSQL request sequence diagram.
+- Untested assumptions: Developer `taskforge` database may still contain Day 5 manual schema without an Alembic version table; use fresh database or deliberate migration stamping before relying on Alembic there.
+- Weak concepts: Continue reinforcing migration state on existing databases and test isolation trade-offs during Day 7 review.
+- Optional work deferred: Full authenticated workspace scoping; N+1 query performance lab; explicit production migration/runbook workflow.
 ## Weekly gates
 - [ ] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -71,10 +71,10 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 6 / W1.6, Orient
-- File/function/section: roadmap.md Day 6; `db/schema.sql`, `src/taskforge/store.py`, and future PostgreSQL repository boundary
-- Next question or exercise: Explain request-scoped DB sessions, commit/rollback, and connection pool ownership.
-- Next build task: Replace memory storage with PostgreSQL repositories using SQLAlchemy/psycopg and migration tooling.
+- Module and phase: Day 7 / W1.7, Orient
+- File/function/section: roadmap.md Day 7; Week 1 API, service, validation, database, migration, and test boundaries
+- Next question or exercise: Five-question Week 1 foundation review, then debug a broken query and implement a small filtered endpoint.
+- Next build task: Day 7 foundation review task after concept questions.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
 
 
