@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 6 / W1.6 Persistence and migrations
-- Calendar date: 2026-09-10
+- Day / module: Day 8 / W2.1 Authentication and sessions
+- Calendar date: 2026-09-11
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Day 6 completed; next action is to start Day 7 foundation review only when requested.
-- Last updated: 2026-09-10
+- Exact current task: Day 8 completed; next module is Day 9 authorization and tenant isolation.
+- Last updated: 2026-09-11
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -19,8 +19,8 @@
 | 4 | W1.4 | 2026-09-09 | Completed | Checked | Completed |
 | 5 | W1.5 | 2026-09-10 | Completed | Checked | Completed |
 | 6 | W1.6 | 2026-09-10 | Completed | Checked | Completed |
-| 7 | W1.7 | - | Not started | Not checked | Not started |
-| 8 | W2.1 | - | Not started | Not checked | Not started |
+| 7 | W1.7 | 2026-09-11 | Completed | Checked | Completed |
+| 8 | W2.1 | 2026-09-11 | Completed | Checked | Completed |
 | 9 | W2.2 | - | Not started | Not checked | Not started |
 | 10 | W2.3 | - | Not started | Not checked | Not started |
 | 11 | W2.4 | - | Not started | Not checked | Not started |
@@ -51,17 +51,17 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 6 assigned readings are BFP 08 database access and BFP 22 integration tests/fixtures; to cover connection pools, request-scoped sessions, commit/rollback, migrations, N+1 awareness, and isolated test databases.
-- Learner answer or concise evidence: Learner correctly explained that a multi-step request should be atomic and that repositories should generally add/flush while one commit happens at the request/service transaction boundary after the whole service operation succeeds. Learner also correctly calculated pool demand as `(pool_size + max_overflow) * worker_processes`, e.g. `(5 + 2) * 4 = 28`, because each process owns its own pool.
-- Exercise path/result: Learner explained that internal repository commits can leave project committed and task 1 committed when task 2 fails, and correctly distinguished flush from commit: flush sends SQL inside the current transaction while commit makes the transaction permanent.
-- Changed files: `.env.example`, `README.md`, `alembic.ini`, `migrations/env.py`, `migrations/versions/0001_initial_schema.py`, `pyproject.toml`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/db.py`, `src/taskforge/db_models.py`, `src/taskforge/main.py`, `src/taskforge/repositories.py`, `src/taskforge/services.py`, existing memory-backed tests, `tests/test_postgres_persistence.py`, and Day 6 docs.
-- Commands and actual results: Dependencies installed with `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"`. Final validation: `.\.venv\Scripts\python.exe -m ruff check .` passed; `.\.venv\Scripts\python.exe -m ruff format --check .` passed; `.\.venv\Scripts\python.exe -m pytest -q` passed with `28 passed` and two dependency warnings. PostgreSQL integration tests created and dropped isolated temporary databases. Manual test also verified creating a project through the API, stopping Uvicorn, restarting Uvicorn, and listing the same project from PostgreSQL-backed storage.
-- Design entry / related ADRs: ADR-003 accepted; docs/design.md Day 6 entry added with a PostgreSQL request sequence diagram.
-- Untested assumptions: Developer `taskforge` database may still contain Day 5 manual schema without an Alembic version table; use fresh database or deliberate migration stamping before relying on Alembic there.
-- Weak concepts: Continue reinforcing migration state on existing databases and test isolation trade-offs during Day 7 review.
-- Optional work deferred: Full authenticated workspace scoping; N+1 query performance lab; explicit production migration/runbook workflow.
+- Reading/sections: Day 8 uses BFP 04 sessions/cookies/JWT/OAuth/OIDC plus OWASP session management and password storage guidance.
+- Learner answer or concise evidence: Learner correctly explained authentication as proving the requester is a particular user, authorization as deciding allowed operations such as workspace/project access, and password hashing as one-way verification rather than reversible storage.
+- Exercise path/result: Learner traced login success, expired `/me`, logout, and session theft correctly. Notes: local HTTP may need a documented non-Secure cookie exception; production HTTPS profile must use Secure cookies.
+- Changed files: `src/taskforge/api.py`, `src/taskforge/auth_service.py`, `src/taskforge/auth_repository.py`, `src/taskforge/security.py`, `src/taskforge/errors.py`, `src/taskforge/models.py`, `src/taskforge/config.py`, `src/taskforge/db_models.py`, `migrations/versions/0002_add_sessions.py`, `tests/test_security.py`, `tests/test_auth_repository.py`, `tests/test_auth_api.py`, `tests/conftest.py`, docs and README.
+- Commands and actual results: Initial migration test caught `sa.Columns` typo; corrected to `sa.Column`. `.\.venv\Scripts\python.exe -m pytest -q tests\test_security.py tests\test_auth_repository.py tests\test_auth_api.py` passed with `14 passed` and two dependency warnings. `.\.venv\Scripts\python.exe -m ruff check .` passed. `.\.venv\Scripts\python.exe -m pytest -q` passed with `48 passed` and two dependency warnings.
+- Design entry / related ADRs: `docs/design.md` Day 8 entry updated. ADR-005 records opaque PostgreSQL-backed sessions.
+- Untested assumptions: Project/task routes are not yet authorization-protected; Day 9 will bind operations to users, memberships, roles, and workspaces. Local HTTP uses a documented non-Secure-cookie exception.
+- Weak concepts: Continue reinforcing that authentication proves identity but does not yet authorize project/task access.
+- Optional work deferred: OAuth/OIDC remains comparison-only unless explicitly requested.
 ## Weekly gates
-- [ ] Week 1: Durable validated CRUD
+- [x] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
 - [ ] Week 3: Recoverable background work
 - [ ] Week 4: Operated release and capstone
@@ -71,11 +71,16 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 7 / W1.7, Orient
-- File/function/section: roadmap.md Day 7; Week 1 API, service, validation, database, migration, and test boundaries
-- Next question or exercise: Five-question Week 1 foundation review, then debug a broken query and implement a small filtered endpoint.
-- Next build task: Day 7 foundation review task after concept questions.
+- Module and phase: Day 9 / W2.2, Orient
+- File/function/section: roadmap.md Day 9; authorization, memberships, roles, and tenant-scoped repository paths
+- Next question or exercise: Write an owner/admin/member/outsider permission matrix for workspaces, projects, and tasks.
+- Next build task: Day 9 authorization: permission matrix, membership management, and tenant-scoped repository paths.
 - Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+
+
+
+
+
 
 
 

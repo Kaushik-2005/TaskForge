@@ -32,3 +32,25 @@
 - Trade-offs and consequences: Existing unit-style API tests must explicitly select the memory backend. Runtime startup now requires the database schema to be migrated before PostgreSQL-backed endpoints are used.
 - Evidence: `tests/test_postgres_persistence.py` runs Alembic against isolated temporary PostgreSQL databases, verifies persisted data survives a new app instance, and verifies rollback removes uncommitted multi-step work.
 - Revisit trigger: Revisit when async database access, explicit unit-of-work objects, or authenticated workspace scoping arrives.
+
+## ADR-004: Treat PostgreSQL as the Week 1 runtime source of truth
+- Date and module: 2026-09-11, Day 7 / W1.7
+- Status: Accepted
+- Context / constraints: Week 1 started with memory-backed CRUD for learning speed, then introduced PostgreSQL schema, migrations, repositories, and integration tests. Day 7 reviewed whether the foundation is ready for authentication and authorization work.
+- Alternatives considered: Keep both memory and PostgreSQL as equal runtime backends; remove memory storage entirely; use PostgreSQL as the default runtime backend while keeping memory storage only for focused tests.
+- Decision: PostgreSQL is the runtime source of truth for local development. Memory storage remains only as a focused test backend for HTTP/service contract tests where database behavior is not under test.
+- Reason: Week 2 identity and authorization work need durable relational state. Keeping memory as a production-like path would hide transaction, migration, and multi-process persistence concerns.
+- Trade-offs and consequences: Tests must be explicit about whether they exercise memory contract behavior or real PostgreSQL behavior. Runtime setup requires PostgreSQL and Alembic migration before using the default backend.
+- Evidence: Day 7 fresh-start rehearsal in `C:\tmp\taskforge-fresh-20260911` created a new venv, installed dependencies, and passed ruff, format check, and pytest. Manual Day 6 testing verified data persisted across Uvicorn restart.
+- Revisit trigger: Revisit if a later test strategy removes the memory store entirely or if a different persistence backend is introduced.
+
+## ADR-005: Use opaque PostgreSQL-backed sessions for authentication
+- Date and module: 2026-09-11, Day 8 / W2.1
+- Status: Accepted
+- Context / constraints: TaskForge needs login, logout, expiry, revocation, and later authorization. Local development uses FastAPI with PostgreSQL already configured as the source of truth.
+- Alternatives considered: Store user identity directly in a signed cookie or JWT; use opaque random session IDs stored in PostgreSQL; defer sessions until authorization.
+- Decision: Use high-entropy opaque session tokens in an HttpOnly cookie. Store only hashed session tokens and hashed CSRF tokens in PostgreSQL with expiry and revocation timestamps.
+- Reason: Server-side sessions make logout and forced revocation straightforward and keep authorization state out of client-controlled tokens. Hashing stored tokens limits damage if the sessions table leaks.
+- Trade-offs and consequences: Every authenticated request needs a database lookup until caching is deliberately introduced. Local HTTP uses a documented non-Secure-cookie exception; production HTTPS must enable Secure cookies. CSRF protection is required because browsers attach cookies automatically.
+- Evidence: Day 8 tests cover wrong credentials, `/me`, expired sessions, logout revocation, new token issuance on login, CSRF rejection/acceptance, and Secure cookie configuration.
+- Revisit trigger: Revisit if TaskForge integrates an external identity provider, needs stateless edge verification, or adds a cache with a documented session freshness/revocation policy.

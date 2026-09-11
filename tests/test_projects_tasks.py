@@ -82,6 +82,57 @@ def test_project_list_page_size_is_bounded() -> None:
     assert too_small.json()["error"]["code"] == "validation_error"
 
 
+def test_project_list_filters_by_name_case_insensitively() -> None:
+    client = make_client()
+
+    create_project(client, name="Launch plan")
+    create_project(client, name="Backend work")
+    create_project(client, name="PLAN review")
+
+    response = client.get("/api/v1/projects?name_contains=plan")
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()] == [
+        "Launch plan",
+        "PLAN review",
+    ]
+
+
+def test_project_list_filter_respects_page_size() -> None:
+    client = make_client()
+
+    create_project(client, name="Launch plan")
+    create_project(client, name="Planning notes")
+    create_project(client, name="PLAN review")
+    create_project(client, name="Backend work")
+
+    response = client.get("/api/v1/projects?name_contains=plan&page_size=2")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert all("plan" in item["name"].lower() for item in response.json())
+
+
+def test_project_list_filter_excludes_non_matching_projects() -> None:
+    client = make_client()
+
+    create_project(client, name="Backend work")
+
+    response = client.get("/api/v1/projects?name_contains=plan")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_project_name_filter_rejects_empty_value() -> None:
+    client = make_client()
+
+    response = client.get("/api/v1/projects?name_contains=")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
 def test_wrong_method_returns_error_envelope() -> None:
     client = make_client()
 

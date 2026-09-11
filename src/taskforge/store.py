@@ -27,11 +27,21 @@ class InMemoryStore:
         self.tasks[project.id] = {}
         return project
 
-    def list_projects(self, page_size: int) -> list[ProjectRead]:
+    def list_projects(
+        self, page_size: int, name_contains: str | None = None
+    ) -> list[ProjectRead]:
         ordered_projects = sorted(
             self.projects.values(),
             key=lambda project: project.created_at,
         )
+
+        if name_contains is not None:
+            needle = name_contains.lower()
+            ordered_projects = [
+                project
+                for project in ordered_projects
+                if needle in project.name.lower()
+            ]
         return ordered_projects[:page_size]
 
     def get_project(self, project_id: UUID) -> ProjectRead | None:

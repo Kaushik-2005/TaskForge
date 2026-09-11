@@ -11,8 +11,8 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-10
-- Roadmap day/module and implementation status: Day 6 / W1.6 completed; Day 7 foundation review is next.
+- Last updated: 2026-09-11
+- Roadmap day/module and implementation status: Day 8 / W2.1 authentication and sessions completed; Day 9 authorization is next.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
@@ -39,8 +39,10 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - `src/taskforge/errors.py`: application exception classes.
 - `src/taskforge/store.py`: in-memory project/task storage for focused tests.
 - `src/taskforge/db.py`: SQLAlchemy engine and session factory construction.
-- `src/taskforge/db_models.py`: SQLAlchemy ORM table mappings.
+- `src/taskforge/db_models.py`: SQLAlchemy ORM table mappings, including users, sessions, workspaces, memberships, projects, and tasks.
 - `src/taskforge/repositories.py`: PostgreSQL project/task repository implementation.
+- `src/taskforge/security.py`: password hashing and high-entropy token generation/hash helpers.
+- `src/taskforge/auth_repository.py`: PostgreSQL user/session persistence for authentication.
 - `alembic.ini`: Alembic configuration.
 - `migrations/env.py`: Alembic migration environment.
 - `migrations/versions/0001_initial_schema.py`: initial PostgreSQL schema migration.
@@ -67,7 +69,9 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: request ID response header and JSON access logs without request bodies.
 - Implemented: service-layer task status transition rule.
 - Implemented: OpenAPI route generation through FastAPI, with test coverage for Day 2 paths.
+- Implemented: optional case-insensitive project-name filtering with memory and PostgreSQL tests.
 - Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
+- Implemented: sessions table migration, password/token security helpers, and AuthRepository tests for active, expired, revoked, and missing sessions.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting.
@@ -104,8 +108,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Data survives API process restart when the PostgreSQL backend is used.
-- No authentication, tenant authorization, worker, readiness check, global payload byte-size limit, or CI exists yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Tenant authorization, worker, readiness check, global payload byte-size limit, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -373,3 +376,87 @@ Authentication and real workspace authorization are still absent. The default wo
 
 #### Related decisions and next design step
 Related: ADR-003 in `docs/decisions.md`. Learner explained total pool demand across worker processes. Next design step is Day 7 foundation review.
+
+### Day 7 - W1.7: Foundation review
+- Calendar date(s): 2026-09-11
+- Status: Completed
+
+#### What changed
+Added optional `name_contains` filtering to `GET /api/v1/projects`, with case-insensitive substring matching in both the memory test store and PostgreSQL repository. Added memory-backed HTTP tests and PostgreSQL integration tests for filter behavior and page-size interaction.
+
+#### Why the design changed
+The review implementation task checks whether Week 1 boundaries are understood well enough to make a small feature pass through route, service, repository, and tests without breaking existing contracts.
+
+#### Boundary placement and ownership
+`src/taskforge/api.py` owns the query parameter contract. `src/taskforge/services.py` forwards the filter through the store protocol. `src/taskforge/store.py` implements in-memory filtering for focused tests. `src/taskforge/repositories.py` implements SQL filtering with case-insensitive matching. Tests verify both memory-backed HTTP behavior and real PostgreSQL repository behavior.
+
+#### API, data, and compatibility impact
+`GET /api/v1/projects` remains backward compatible. `name_contains` is optional, rejects an empty value through query validation, filters case-insensitively, and still applies `page_size` after filtering.
+
+#### Request / job flow
+Project list requests now optionally include a filter before ordering/limiting results. Jobs are not applicable.
+
+```mermaid
+flowchart LR
+    Client[Client] --> Route[List projects]
+    Route --> Service[Service]
+    Service --> Repo[Store or PostgresStore]
+    Repo --> Filter[name filter]
+    Filter --> Limit[page_size]
+```
+
+#### Verification and evidence
+- Learner debugged the broken `COUNT(*)` with `LEFT JOIN` query and corrected it to `COUNT(t.id)` with explicit grouping.
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `.\.venv\Scripts\python.exe -m pytest -q`: `34 passed`, with two dependency warnings.
+- Fresh-start rehearsal in `C:\tmp\taskforge-fresh-20260911`: clean venv creation succeeded, editable install succeeded, ruff check passed, format check passed, and pytest passed with `34 passed`.
+
+#### Known limitations after this day
+Fresh-start rehearsal used a clean local copy rather than a separate remote clone. Authentication and real workspace authorization remain future work.
+
+#### Related decisions and next design step
+Related: ADR-004 records PostgreSQL as the Week 1 runtime source of truth. Next design step is Day 8 authentication and sessions.
+
+### Day 8 - W2.1: Authentication and sessions
+- Calendar date(s): 2026-09-11
+- Status: Completed
+
+#### What changed
+Added a sessions table migration, password/token security helpers, auth request/response models, `AuthRepository`, `AuthService`, and auth routes for registration, login, logout, and `/me`. Shared PostgreSQL integration-test fixture setup moved to `tests/conftest.py`. Unsafe project/task mutations now require a valid CSRF header when a session cookie is present.
+
+#### Why the design changed
+Week 2 needs a durable identity boundary before authorization can be enforced. Server-side session rows allow expiry and revocation instead of trusting a self-contained client token.
+
+#### Boundary placement and ownership
+`src/taskforge/security.py` owns password hashing and high-entropy token generation/hash helpers. `src/taskforge/auth_repository.py` owns database access for users and sessions. `src/taskforge/auth_service.py` owns registration, login credential verification, session issuance, logout, current-user lookup, and CSRF token validation. `src/taskforge/api.py` owns HTTP cookies, auth route contracts, and HTTP error mapping.
+
+#### API, data, and compatibility impact
+Added `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/logout`, and `/api/v1/auth/me`. Login sets an HttpOnly SameSite=Lax session cookie and returns a CSRF token. The database schema now has `sessions` with hashed session/CSRF tokens, expiry, revocation, and a user foreign key. Project/task routes remain backward compatible for unauthenticated local development, but if a session cookie is present on unsafe mutations, CSRF is required.
+
+#### Request / job flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Auth as AuthService
+    participant Repo as AuthRepository
+    participant PG as PostgreSQL
+    Client->>API: POST /auth/login
+    API->>Auth: verify credentials
+    Auth->>Repo: find user + create session
+    Repo->>PG: users/sessions SQL
+    API-->>Client: HttpOnly cookie + CSRF token
+```
+
+#### Verification and evidence
+- `.\.venv\Scripts\python.exe -m pytest -q tests\test_security.py tests\test_auth_repository.py tests\test_auth_api.py`: `14 passed`, with two dependency warnings.
+- `.\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `.\.venv\Scripts\python.exe -m pytest -q`: `48 passed`, with two dependency warnings.
+
+#### Known limitations after this day
+Authentication proves identity, but project/task routes are not yet authorization-scoped to memberships or workspaces. Local HTTP uses `TASKFORGE_SESSION_COOKIE_SECURE=false`; production HTTPS must set Secure cookies. Login throttling and tenant authorization are future modules.
+
+#### Related decisions and next design step
+Related: ADR-005 records opaque PostgreSQL-backed sessions. Next design step is Day 9 authorization and tenant isolation.
+

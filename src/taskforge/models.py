@@ -53,3 +53,24 @@ class TaskRead(BaseModel):
     title: str
     status: TaskStatus
     created_at: datetime
+
+
+class UserRegister(StrictModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class UserLogin(StrictModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class UserRead(BaseModel):
+    id: UUID
+    email: str
+    created_at: datetime
+
+
+class AuthSessionRead(BaseModel):
+    user: UserRead
+    csrf_token: str

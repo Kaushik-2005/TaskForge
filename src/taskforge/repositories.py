@@ -44,13 +44,21 @@ class PostgresStore:
         self.session.flush()
         return self._project_read(project)
 
-    def list_projects(self, page_size: int) -> list[ProjectRead]:
-        rows = self.session.scalars(
-            select(ProjectRow)
-            .where(ProjectRow.workspace_id == self.settings.default_workspace_id)
-            .order_by(ProjectRow.created_at)
-            .limit(page_size)
-        ).all()
+    def list_projects(
+        self,
+        page_size: int,
+        name_contains: str | None = None,
+    ) -> list[ProjectRead]:
+        statement = select(ProjectRow).where(
+            ProjectRow.workspace_id == self.settings.default_workspace_id
+        )
+
+        if name_contains is not None:
+            statement = statement.where(ProjectRow.name.ilike(f"%{name_contains}%"))
+
+        statement = statement.order_by(ProjectRow.created_at).limit(page_size)
+
+        rows = self.session.scalars(statement).all()
         return [self._project_read(row) for row in rows]
 
     def get_project(self, project_id: UUID) -> ProjectRead | None:

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     database_pool_timeout_seconds: int = Field(default=5, ge=1, le=60)
     default_workspace_id: UUID = UUID("00000000-0000-4000-8000-000000000101")
     default_workspace_name: str = Field(default="Local workspace", min_length=1)
+    session_ttl_minutes: int = Field(default=60, ge=1, le=43200)
+    session_cookie_name: str = Field(default="taskforge_session", min_length=1)
+    csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
+    session_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

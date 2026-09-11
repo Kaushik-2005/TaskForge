@@ -120,3 +120,47 @@
 - Weak areas / incomplete work: None for Day 6 manual persistence.
 - Exact next action: Commit Day 6 changes or start Day 7 / W1.7 foundation review when requested.
 - Current repository state / relevant uncommitted work: Day 6 implementation and documentation changes remain uncommitted.
+
+## 2026-09-11 - Day 7 / W1.7 - Foundation review and filter task
+- Starting point: Day 6 completed; Day 7 Week 1 review started on September 11, 2026.
+- Concepts and work covered: Week 1 conceptual review, SQL aggregate debugging, and a small filtered project-list endpoint.
+- Learner evidence: Learner correctly answered five review questions, debugged `COUNT(*)` with `LEFT JOIN`, and implemented `name_contains` filtering across route, service, memory store, PostgreSQL repository, and tests.
+- Files changed: `src/taskforge/api.py`, `src/taskforge/services.py`, `src/taskforge/store.py`, `src/taskforge/repositories.py`, `tests/test_projects_tasks.py`, `tests/test_postgres_persistence.py`, `docs/tracker.md`, `docs/learning.md`, `docs/design.md`, `docs/session-log.md`.
+- Commands run and outcomes: `.\.venv\Scripts\python.exe -m ruff check .` passed. `.\.venv\Scripts\python.exe -m ruff format --check .` passed. `.\.venv\Scripts\python.exe -m pytest -q` passed with `34 passed` and two dependency warnings.
+- Problems and resolutions: Initial code passed behavior tests but needed formatting; protocol signature also needed to match the new filter argument. Both were corrected.
+- Weak areas / incomplete work: Day 7 final milestone review still needs fresh-start setup evidence and design/contract reconciliation.
+- Exact next action: Review README/setup from a fresh-start perspective, reconcile docs/design.md and project contract, then decide whether Week 1 gate can be marked complete.
+- Current repository state / relevant uncommitted work: Day 6 and Day 7 implementation/documentation changes remain uncommitted.
+
+## 2026-09-11 - Day 7 / W1.7 - Week 1 gate completion
+- Starting point: Day 7 concept review, SQL debugging, and filtered endpoint implementation had passed; final milestone review remained.
+- Concepts and work covered: Fresh-start setup rehearsal, setup guide review, project contract reconciliation, design snapshot reconciliation, and Week 1 architecture decision.
+- Learner evidence: Earlier Day 7 evidence applies: learner answered the five review questions, debugged the aggregate query, and implemented the filtered endpoint. Fresh-start evidence was produced by running setup and validation in `C:\tmp\taskforge-fresh-20260911`.
+- Files changed: `README.md`, `docs/project-contract.md`, `docs/design.md`, `docs/decisions.md`, `docs/tracker.md`, `docs/learning.md`, `docs/session-log.md`.
+- Commands run and outcomes: Current workspace ruff check passed, format check passed, and pytest passed with `34 passed`. Fresh-start rehearsal created a clean venv, installed with `.\.venv\Scripts\python.exe -m pip install -e ".[dev]"`, then ruff check passed, format check passed, and pytest passed with `34 passed`.
+- Problems and resolutions: README and project contract still referenced Day 6 and omitted `name_contains`; updated them. docs/design.md had a stale limitation and one literal newline escape; corrected both.
+- Weak areas / incomplete work: Authentication, session security, real tenant authorization, readiness/dependency health, payload byte limits, live log inspection, and CI remain future work.
+- Exact next action: Start Day 8 / W2.1 authentication and sessions when requested.
+- Current repository state / relevant uncommitted work: Week 1 implementation and documentation changes remain uncommitted.
+
+## 2026-09-11 - Day 8 / W2.1 - AuthRepository verification
+- Starting point: Password/token helpers and sessions migration existed; AuthRepository tests initially covered only happy paths.
+- Concepts and work covered: Active versus expired/revoked sessions, repository responsibility, and shared PostgreSQL test fixtures.
+- Learner evidence: Learner added repository tests for expired sessions, revoked sessions, and missing session revocation.
+- Files changed: `src/taskforge/auth_repository.py`, `tests/test_auth_repository.py`, `tests/conftest.py`, `tests/test_postgres_persistence.py`, Day 8 docs.
+- Commands run and outcomes: `.\.venv\Scripts\python.exe -m pytest -q tests\test_auth_repository.py tests\test_postgres_persistence.py` passed with `10 passed` and two dependency warnings. Ruff check passed for auth repository and shared fixture files.
+- Problems and resolutions: Importing a fixture from another test module passed pytest but failed Ruff as unused/redefined; moved the shared migrated PostgreSQL fixture into `tests/conftest.py`.
+- Weak areas / incomplete work: AuthService, HTTP auth routes, cookie policy, CSRF, session rotation, and wrong-credential tests remain incomplete.
+- Exact next action: Implement and test AuthService registration/login/logout/current-user behavior.
+- Current repository state / relevant uncommitted work: Week 1 and Day 8 changes remain uncommitted.
+
+## 2026-09-11 - Day 8 / W2.1 - Authentication completion
+- Starting point: Session schema, security helpers, and AuthRepository were implemented and verified.
+- Concepts and work covered: AuthService, login/logout/me/register routes, HttpOnly session cookies, CSRF token validation, expired/revoked sessions, and local HTTP versus production Secure-cookie behavior.
+- Learner evidence: Earlier Day 8 concept answers apply: learner explained authentication vs authorization, password hashing vs encryption, CSRF risk, login/expiry/logout/session theft behavior, and repository tests for session states.
+- Files changed: `src/taskforge/api.py`, `src/taskforge/auth_service.py`, `src/taskforge/auth_repository.py`, `src/taskforge/security.py`, `src/taskforge/errors.py`, `src/taskforge/models.py`, `src/taskforge/config.py`, `src/taskforge/db_models.py`, `migrations/versions/0002_add_sessions.py`, `tests/test_security.py`, `tests/test_auth_repository.py`, `tests/test_auth_api.py`, `tests/conftest.py`, README and docs.
+- Commands run and outcomes: Focused auth suite passed with `14 passed`. Ruff check passed. Full pytest passed with `48 passed` and two dependency warnings.
+- Problems and resolutions: CSRF dependency initially mapped the `CsrfError` class rather than an instance, producing 500 instead of 403; fixed and covered by API test.
+- Weak areas / incomplete work: Project/task authorization and tenant isolation are not implemented; authentication alone does not prevent cross-user data access.
+- Exact next action: Start Day 9 / W2.2 by writing an owner/admin/member/outsider permission matrix and then scoping project/task data paths to authenticated workspace membership.
+- Current repository state / relevant uncommitted work: Week 1 and Day 8 implementation/documentation changes remain uncommitted.

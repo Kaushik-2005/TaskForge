@@ -345,3 +345,39 @@ Roadmap Day 6: BFP 08 database access; BFP 22 integration tests/fixtures.
 
 #### My questions, corrections, and revision items
 Learner correctly identified that a project plus default tasks created in one logical operation should commit once after all steps succeed, with rollback on failure. Learner correctly explained total connection pool demand across processes: each worker has an independent pool, so maximum demand is `(pool_size + max_overflow) * worker_processes`; for 4 workers with pool size 5 and overflow 2, that is 28 connections.
+
+### Day 7 - W1.7: Foundation review
+#### Concept and why it exists
+Week 1 review verifies that TaskForge's request, validation, service, persistence, migration, and testing boundaries are understood together rather than as isolated code changes.
+
+#### Exercise and validation observations
+Learner correctly explained the PostgreSQL-backed project creation path, separation between route/service/repository responsibilities, parsing/schema/domain failure categories, why migrations do not run during requests, and why tests use isolated temporary databases. Learner debugged the `COUNT(*)` with `LEFT JOIN` issue: zero-task projects can be counted as one preserved joined row, so the corrected aggregate is `COUNT(t.id)` with explicit grouping. Learner implemented `name_contains` project filtering through route, service, memory store, PostgreSQL repository, and tests.
+
+#### My questions, corrections, and revision items
+Continue reinforcing that migrations are deployment/admin operations and request handlers should assume the schema already exists. Day 7 fresh-start rehearsal proved the setup path in a clean copy under `C:\tmp\taskforge-fresh-20260911`: venv creation, dependency install, ruff, format check, and pytest all passed. Week 1 gate completed with PostgreSQL as runtime source of truth and memory storage retained only for focused tests.
+
+### Day 8 - W2.1: Authentication and sessions
+#### Concept and why it exists
+Authentication proves who is making a request. Authorization decides what that authenticated user may do. TaskForge needs both because later workspace isolation depends on knowing the user first, then checking membership and role.
+
+#### Mental model and small example
+A login request verifies an email and password, creates a server-side session, sends an opaque session ID in a cookie, and later requests present that cookie. The server looks up the session to identify the current user.
+
+#### What happens internally
+Passwords are stored as password hashes, not plaintext and not reversible encrypted values. Login verifies a submitted password against the stored hash. Session IDs should be unpredictable opaque secrets; the database stores session state such as user ID, expiry, revocation, and rotation metadata.
+
+#### Boundaries, failure modes, and common mistakes
+A common mistake is confusing authentication with authorization. Another is storing recoverable passwords or placing user data directly in a cookie without server-side revocation. Cookie-authenticated unsafe requests also need CSRF protection.
+
+#### TaskForge application
+Day 8 introduced registration/login/logout/me, maintained password hashing, server-side sessions, cookie behavior, expiry/revocation, and CSRF protection for cookie-authenticated mutations.
+
+#### Exercise and validation observations
+Learner correctly traced login success, expired `/me`, logout, and stolen session behavior. Expired sessions should not return user data and may be invalidated. Logout invalidates/deletes server-side session state and clears the browser cookie. A stolen session can impersonate the user until expiry/revocation, limited by expiration, revocation, secure random IDs, HttpOnly/SameSite/Secure cookie policy, CSRF protection, and authorization checks. Local plain HTTP requires a documented exception for Secure cookies; production HTTPS must use Secure cookies.
+
+#### My questions, corrections, and revision items
+Learner correctly explained authentication versus authorization and why password hashes are used instead of encryption. Learner added `SessionRow` and a sessions migration; the migration test caught a typo (`sa.Columns` instead of `sa.Column`), proving the migration file executes against an empty PostgreSQL database. Learner added password hashing and token hashing helpers. Passwords use `pwdlib` recommended hashing; server-generated session/CSRF tokens use SHA-256 hashes plus constant-time comparison because the raw tokens are high-entropy random secrets. Learner added `AuthRepository` with user creation/email lookup, session creation, session revocation, and active-session lookup. Repository tests cover active, expired, revoked, and missing-session behavior against migrated PostgreSQL databases. The final API exposes `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/logout`, and `/api/v1/auth/me`. Login issues a fresh opaque session cookie and returns a CSRF token; only token hashes are stored. Expired and revoked sessions return `401 unauthenticated`. Cookie-authenticated unsafe project/task mutations require `X-CSRF-Token`. Local HTTP uses a documented non-Secure-cookie exception; the HTTPS release profile can set Secure cookies.
+
+
+#### Interview explanation
+TaskForge uses opaque server-side sessions instead of self-contained JWTs for the first auth implementation. On registration, the password is hashed with a maintained password hashing library before storage. On login, the service normalizes the email, verifies the submitted password against the stored hash, creates fresh high-entropy session and CSRF tokens, stores only their hashes in PostgreSQL, and sends the raw session token in an HttpOnly SameSite=Lax cookie. `/me` looks up a valid, unexpired, unrevoked session. Logout revokes the server-side session and clears the browser cookie. Because browsers attach cookies automatically, unsafe cookie-authenticated mutations require the matching CSRF token in `X-CSRF-Token`.

@@ -1,16 +1,20 @@
 # TaskForge Project Contract
 
-## Day 2 scope
+## Current scope
 
-TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, and PostgreSQL-backed runtime persistence by default. Memory storage remains available only for focused tests.
+TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, PostgreSQL-backed runtime persistence by default, optional project-name filtering, and authentication with server-side sessions. Memory storage remains available only for focused tests.
 
 ## Supported endpoints
 
 | Method | Path | Purpose | Success response |
 | --- | --- | --- | --- |
 | GET | `/health/live` | Confirms the API process is alive and request routing reaches application code. | `200 {"status":"ok"}` |
+| POST | `/api/v1/auth/register` | Create a user with email/password. | `201 UserRead` |
+| POST | `/api/v1/auth/login` | Verify credentials, create a server-side session, set the session cookie, and return a CSRF token. | `200 AuthSessionRead` |
+| POST | `/api/v1/auth/logout` | Revoke the current session and clear the cookie. Requires CSRF when a session cookie is present. | `204 No Content` |
+| GET | `/api/v1/auth/me` | Read the current authenticated user from a valid session cookie. | `200 UserRead` |
 | POST | `/api/v1/projects` | Create a project. | `201 ProjectRead`, with `Location` header |
-| GET | `/api/v1/projects?page_size=20` | List projects in creation order. | `200 list[ProjectRead]` |
+| GET | `/api/v1/projects?page_size=20&name_contains=plan` | List projects in creation order, optionally filtered by case-insensitive name substring. | `200 list[ProjectRead]` |
 | GET | `/api/v1/projects/{project_id}` | Read one project. | `200 ProjectRead` |
 | PATCH | `/api/v1/projects/{project_id}` | Partially update a project's name. | `200 ProjectRead` |
 | DELETE | `/api/v1/projects/{project_id}` | Delete one project and its tasks. | `204 No Content` |
@@ -33,12 +37,11 @@ Expected HTTP and validation errors use this envelope:
 }
 ```
 
-Validation errors use `422` and `code: validation_error`. Page size is bounded from 1 through 100. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`.
+Validation errors use `422` and `code: validation_error`. Auth failures use `401 invalid_credentials` or `401 unauthenticated`; duplicate registration uses `409 email_already_registered`; missing/invalid CSRF uses `403 csrf_required`. Page size is bounded from 1 through 100. `name_contains` is optional, case-insensitive, and must not be empty when supplied. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`.
 
 ## Current non-goals
 
-- No authentication or sessions yet.
-- No authentication-backed user/workspace isolation yet; the unauthenticated development API writes projects into a configured default workspace.
+- No authentication-backed user/workspace isolation yet; project/task routes still write into a configured default workspace until Day 9 authorization work.
 - No tenant/workspace authorization yet.
 - No readiness/dependency health yet.
 - No public deployment profile yet.
@@ -47,11 +50,11 @@ Validation errors use `422` and `code: validation_error`. Page size is bounded f
 
 - Python 3.12.0 was detected locally.
 - The chosen stack is Python, FastAPI, pytest, and ruff.
-- Local development uses plain HTTP on `127.0.0.1`. TLS and production proxy behavior are future topics.
+- Local development uses plain HTTP on `127.0.0.1`, so `TASKFORGE_SESSION_COOKIE_SECURE=false` is the local exception. Production HTTPS should use `TASKFORGE_SESSION_COOKIE_SECURE=true` so the browser only sends the session cookie over HTTPS.
 
 ## Validation evidence
 
-Latest core validation executed on 2026-09-10:
+Latest core validation executed on 2026-09-11:
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
@@ -63,7 +66,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `28 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
+- Pytest: `48 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
@@ -91,3 +94,13 @@ Current SQL guarantees tested:
 - Project task counts include projects with zero tasks.
 
 The default runtime backend uses PostgreSQL through request-scoped SQLAlchemy sessions. Repository methods flush changes but do not commit. The request dependency commits once after a successful handler or rolls back on exception.
+
+## Authentication contract
+
+- Passwords are stored with a maintained password hashing library, not plaintext or reversible encryption.
+- Raw session and CSRF tokens are generated with high-entropy randomness; only token hashes are stored in PostgreSQL.
+- `taskforge_session` is HttpOnly, SameSite=Lax, path `/`, and configurable Secure.
+- `/api/v1/auth/me` returns `401 unauthenticated` for missing, expired, or revoked sessions.
+- Cookie-authenticated unsafe project/task mutations require `X-CSRF-Token`.
+
+

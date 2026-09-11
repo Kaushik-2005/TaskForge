@@ -19,7 +19,11 @@ from taskforge.models import (
 
 class TaskForgeStore(Protocol):
     def create_project(self, payload: ProjectCreate) -> ProjectRead: ...
-    def list_projects(self, page_size: int) -> list[ProjectRead]: ...
+    def list_projects(
+        self,
+        page_size: int,
+        name_contains: str | None = None,
+    ) -> list[ProjectRead]: ...
     def get_project(self, project_id: UUID) -> ProjectRead | None: ...
     def update_project(
         self,
@@ -46,8 +50,15 @@ class TaskForgeService:
     def create_project(self, payload: ProjectCreate) -> ProjectRead:
         return self.store.create_project(payload)
 
-    def list_projects(self, page_size: int) -> list[ProjectRead]:
-        return self.store.list_projects(page_size)
+    def list_projects(
+        self,
+        page_size: int,
+        name_contains: str | None = None,
+    ) -> list[ProjectRead]:
+        return self.store.list_projects(
+            page_size,
+            name_contains=name_contains,
+        )
 
     def get_project(self, project_id: UUID) -> ProjectRead:
         project = self.store.get_project(project_id)

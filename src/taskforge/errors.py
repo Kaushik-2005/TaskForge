@@ -16,3 +16,28 @@ class TaskNotFoundError(TaskForgeError):
 class InvalidStateTransitionError(TaskForgeError):
     code = "invalid_state_transition"
     message = "Task status cannot change directly from todo to done"
+
+
+class AuthError(TaskForgeError):
+    code = "auth_error"
+    message = "Authentication failed"
+
+
+class EmailAlreadyRegisteredError(AuthError):
+    code = "email_already_registered"
+    message = "Email is already registered"
+
+
+class InvalidCredentialsError(AuthError):
+    code = "invalid_credentials"
+    message = "Invalid email or password"
+
+
+class UnauthenticatedError(AuthError):
+    code = "unauthenticated"
+    message = "Authentication required"
+
+
+class CsrfError(AuthError):
+    code = "csrf_required"
+    message = "Valid CSRF token required"
