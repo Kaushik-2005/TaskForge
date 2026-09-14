@@ -4,6 +4,7 @@ from uuid import UUID
 from taskforge.errors import (
     InvalidStateTransitionError,
     ProjectNotFoundError,
+    StaleTaskVersionError,
     TaskNotFoundError,
 )
 from taskforge.models import (
@@ -106,7 +107,7 @@ class TaskForgeService:
             raise InvalidStateTransitionError
         updated = self.store.update_task(project_id, task_id, payload)
         if updated is None:
-            raise TaskNotFoundError
+            raise StaleTaskVersionError
         return updated
 
     def delete_task(self, project_id: UUID, task_id: UUID) -> None:

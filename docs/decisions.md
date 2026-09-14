@@ -65,5 +65,13 @@
 - Trade-offs and consequences: Repository methods need explicit user/workspace/object parameters instead of generic `get_project(project_id)` calls. Tests must cover outsider invisibility and same-tenant role denial separately.
 - Evidence: `tests/test_authorization.py` covers owner project and task read/update/delete, outsider `404` for project/task access, member `403` for project delete, membership add/list/update/delete role behavior, duplicate membership `409`, last-owner `409`, and foreign task under own project returning `404`. Full pytest passed with 75 tests.
 - Revisit trigger: Revisit when membership-management endpoints, task authorization, or a dedicated policy abstraction is introduced.
-
-
+## ADR-007: Use version-based optimistic concurrency for task updates
+- Date and module: 2026-09-14, Day 10 / W2.3
+- Status: Accepted
+- Context / constraints: Multiple users can read the same task version and later submit updates from stale snapshots. TaskForge needs to prevent silent lost updates while keeping the API contract understandable at this stage.
+- Alternatives considered: Accept last-write-wins behavior; use row locks for task updates; use HTTP `ETag`/`If-Match` with `412 Precondition Failed`; require `expected_version` in the request body and return `409 Conflict` on stale writes.
+- Decision: Task PATCH requests require `expected_version`. Repository updates include the current version in the `WHERE` predicate, increment the version on success, and insert an audit event in the same transaction. A stale version returns `409 stale_task_version`.
+- Reason: The version belongs to the domain object and is simple for the current JSON API. It prevents silent overwrite without holding locks across user think time.
+- Trade-offs and consequences: Clients must read the current task version and include it when updating. Older clients that omit `expected_version` now receive validation errors. HTTP precondition semantics remain available for a future API refinement.
+- Evidence: PostgreSQL tests prove a stale second writer cannot overwrite the first writer and that successful updates write one audit event in the same committed transaction. Full pytest passed with 78 tests.
+- Revisit trigger: Revisit if TaskForge exposes cache validators/ETags, needs partial merge behavior, or measures contention that requires pessimistic locking or retry policies.

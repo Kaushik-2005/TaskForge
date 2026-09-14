@@ -19,6 +19,7 @@ from taskforge.errors import (
     LastOwnerError,
     PermissionDeniedError,
     ProjectNotFoundError,
+    StaleTaskVersionError,
     TaskForgeError,
     TaskNotFoundError,
     UnauthenticatedError,
@@ -135,7 +136,7 @@ def map_service_error(error: TaskForgeError) -> HTTPException:
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     if isinstance(error, PermissionDeniedError):
         return api_error(status.HTTP_403_FORBIDDEN, error.code, error.message)
-    if isinstance(error, InvalidStateTransitionError):
+    if isinstance(error, InvalidStateTransitionError | StaleTaskVersionError):
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     return api_error(status.HTTP_500_INTERNAL_SERVER_ERROR, error.code, error.message)
 

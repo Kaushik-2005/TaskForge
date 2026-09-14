@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 8 / W2.1 authentication and sessions is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, project/task CRUD, password hashing, server-side sessions, auth endpoints, and CSRF protection for cookie-authenticated unsafe mutations. Memory storage remains available for focused unit-style tests.
+Day 10 / W2.3 transactions and concurrent writes is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, and task update audit events. Memory storage remains available for focused unit-style tests.
 
 ## Records
 
@@ -91,7 +91,7 @@ Project and task API:
 - `POST /api/v1/projects/{project_id}/tasks`
 - `GET /api/v1/projects/{project_id}/tasks?page_size=20`
 - `GET /api/v1/projects/{project_id}/tasks/{task_id}`
-- `PATCH /api/v1/projects/{project_id}/tasks/{task_id}`
+- `PATCH /api/v1/projects/{project_id}/tasks/{task_id}` requires `expected_version`
 - `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
 
 With the default `postgres` backend, user/session/project/task data is durable in PostgreSQL and survives API process restarts. Tests that need fast in-memory behavior explicitly pass `storage_backend='memory'`.
@@ -102,6 +102,7 @@ Validation behavior:
 - Path IDs must be valid UUIDs. `name_contains` filters projects case-insensitively and rejects an empty value.
 - Malformed IDs return `422`; valid missing resources return `404`.
 - Task status cannot change directly from `todo` to `done`.
+- Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version` instead of silently overwriting newer data.
 - Every response includes `X-Request-ID`; incoming `X-Request-ID` is preserved.
 - Login sets an HttpOnly `taskforge_session` cookie and returns a CSRF token in the response body.
 - Unsafe project/task mutations with a session cookie require `X-CSRF-Token`.
@@ -110,7 +111,7 @@ Validation behavior:
 
 ## Limitations
 
-- Authentication exists, but project/task data is not yet tenant-authorized. Day 9 will bind operations to workspace membership and roles.
+- Workspace-scoped project/task authorization is implemented. Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
 - No readiness/dependency health, public deployment profile, or CI exists yet.
 
 

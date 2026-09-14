@@ -2,7 +2,7 @@
 
 ## Current scope
 
-TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, PostgreSQL-backed runtime persistence by default, optional project-name filtering, and authentication with server-side sessions. Memory storage remains available only for focused tests.
+TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, PostgreSQL-backed runtime persistence by default, optional project-name filtering, authentication with server-side sessions, workspace authorization, version-checked task updates, and task update audit events. Memory storage remains available only for focused tests.
 
 ## Supported endpoints
 
@@ -21,7 +21,7 @@ TaskForge is a local backend API with a live health endpoint, project/task CRUD,
 | POST | `/api/v1/projects/{project_id}/tasks` | Create a task under a project. | `201 TaskRead`, with `Location` header |
 | GET | `/api/v1/projects/{project_id}/tasks?page_size=20` | List tasks for a project in creation order. | `200 list[TaskRead]` |
 | GET | `/api/v1/projects/{project_id}/tasks/{task_id}` | Read one task under a project. | `200 TaskRead` |
-| PATCH | `/api/v1/projects/{project_id}/tasks/{task_id}` | Partially update task title and/or status. | `200 TaskRead` |
+| PATCH | `/api/v1/projects/{project_id}/tasks/{task_id}` | Partially update task title and/or status with `expected_version`. | `200 TaskRead` |
 | DELETE | `/api/v1/projects/{project_id}/tasks/{task_id}` | Delete one task. | `204 No Content` |
 
 ## Error contract
@@ -37,12 +37,11 @@ Expected HTTP and validation errors use this envelope:
 }
 ```
 
-Validation errors use `422` and `code: validation_error`. Auth failures use `401 invalid_credentials` or `401 unauthenticated`; duplicate registration uses `409 email_already_registered`; missing/invalid CSRF uses `403 csrf_required`. Page size is bounded from 1 through 100. `name_contains` is optional, case-insensitive, and must not be empty when supplied. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`.
+Validation errors use `422` and `code: validation_error`. Auth failures use `401 invalid_credentials` or `401 unauthenticated`; duplicate registration uses `409 email_already_registered`; missing/invalid CSRF uses `403 csrf_required`. Page size is bounded from 1 through 100. `name_contains` is optional, case-insensitive, and must not be empty when supplied. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`. Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version`.
 
 ## Current non-goals
 
-- No authentication-backed user/workspace isolation yet; project/task routes still write into a configured default workspace until Day 9 authorization work.
-- No tenant/workspace authorization yet.
+- Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
 - No readiness/dependency health yet.
 - No public deployment profile yet.
 
@@ -54,7 +53,7 @@ Validation errors use `422` and `code: validation_error`. Auth failures use `401
 
 ## Validation evidence
 
-Latest core validation executed on 2026-09-11:
+Latest core validation executed on 2026-09-14:
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
@@ -66,7 +65,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `48 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
+- Pytest: `78 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
@@ -90,6 +89,8 @@ Current SQL guarantees tested:
 - Projects cannot reference a missing workspace.
 - Memberships cannot duplicate `(user_id, workspace_id)`.
 - Tasks cannot use a status outside `todo`, `in_progress`, `done`.
+- Tasks have a durable integer `version`; conditional updates require matching `expected_version` and increment the version on success.
+- Successful task updates insert an audit event in the same transaction.
 - Authorized task lookup joins memberships, projects, and tasks.
 - Project task counts include projects with zero tasks.
 
@@ -102,5 +103,15 @@ The default runtime backend uses PostgreSQL through request-scoped SQLAlchemy se
 - `taskforge_session` is HttpOnly, SameSite=Lax, path `/`, and configurable Secure.
 - `/api/v1/auth/me` returns `401 unauthenticated` for missing, expired, or revoked sessions.
 - Cookie-authenticated unsafe project/task mutations require `X-CSRF-Token`.
+## Concurrency contract
 
+Task update responses include `version`. A task PATCH body must include the version the client edited:
 
+```json
+{
+  "expected_version": 1,
+  "title": "Updated title"
+}
+```
+
+If the stored task version no longer matches, the API returns `409 stale_task_version` and does not apply the update. Successful updates increment the version and write a task audit event in the same database transaction.

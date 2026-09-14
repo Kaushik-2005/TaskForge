@@ -4,6 +4,7 @@ from taskforge.authorization_repository import AuthorizationRepository
 from taskforge.errors import (
     InvalidStateTransitionError,
     PermissionDeniedError,
+    StaleTaskVersionError,
     TaskNotFoundError,
     WorkspaceNotFoundError,
 )
@@ -248,7 +249,7 @@ class AuthorizationService:
             payload=payload,
         )
         if updated is None:
-            raise TaskNotFoundError
+            raise StaleTaskVersionError
         return updated
 
     def delete_workspace_task(

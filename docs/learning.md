@@ -416,3 +416,48 @@ Learner correctly identified two nested-route attack cases: swapping both `proje
 
 #### My questions, corrections, and revision items
 Continue reinforcing the difference between cross-tenant invisibility (`404`) and in-tenant role denial (`403`). Build must remove the default-workspace bridge from authenticated project/task operations.
+### Day 10 - W2.3: Transactions and concurrent writes
+#### Concept and why it exists
+A transaction groups database work into an atomic unit, but it does not automatically protect the API from stale client snapshots. A lost update happens when two writers both base their change on the same old version and the later write overwrites the earlier write without noticing.
+
+#### Mental model and small example
+Task A starts at version 3 with `title="Old"` and `status="todo"`. User 1 reads version 3 and changes the title. User 2 also read version 3 earlier and changes the status by sending stale task state. Without a version check, User 2 can accidentally put the old title back.
+
+TaskForge now makes the client say which version it edited:
+
+```json
+{"expected_version": 3, "status": "in_progress"}
+```
+
+The database update succeeds only if the row is still at version 3. If another request already moved it to version 4, the update affects zero rows and the API returns `409 stale_task_version`.
+
+#### What happens internally
+PostgreSQL's MVCC lets transactions see committed row versions according to the isolation level. Under the normal read committed behavior, each statement sees a fresh committed snapshot, but that does not tell the application whether the client's earlier read is stale. The repository therefore performs a conditional update with both identity and version predicates, increments the version in the same statement, and inserts an audit event in the same request transaction.
+
+#### Boundaries, failure modes, and common mistakes
+- The API contract requires `expected_version` on task PATCH requests.
+- The repository owns the conditional `UPDATE ... WHERE version = :expected_version` SQL.
+- The service maps a failed conditional update after a successful read into a stale-version conflict.
+- The API maps stale updates to `409 Conflict`.
+- The audit row commits with the task update or rolls back with it.
+- Common mistake: assuming that because every request uses a transaction, two stale writes cannot overwrite each other.
+
+#### Alternatives and trade-offs
+TaskForge chose body-level `expected_version` plus `409 Conflict` because it is simple and explicit for the current domain model. HTTP `ETag` plus `If-Match` and `412 Precondition Failed` is also valid, especially when the API wants to align with HTTP caching/precondition semantics. Row locks can serialize writers, but they hold database locks while a transaction is open and do not solve stale edits that happen after a user read and before a later PATCH.
+
+#### TaskForge application
+Day 10 added `tasks.version`, an `audit_events` table, version fields in `TaskRead`, required `expected_version` in `TaskUpdate`, conditional task updates in both legacy and workspace-scoped repositories, stale-version errors, and tests for stale writer rejection plus audit-event atomicity.
+
+#### Exercise and validation observations
+Learner correctly explained the stale-snapshot lost-update scenario and selected version-based `409 Conflict` as the Day 10 contract. Tests prove that a second writer using an old version cannot silently overwrite the first writer's newer title, and that a successful update writes one audit event in the same committed transaction.
+
+#### Interview explanation
+A concise explanation: "TaskForge prevents silent lost updates by making task PATCH requests include the version the client edited. The repository updates only when `task.id`, `project_id`, and `version` still match. A successful update increments the version and writes an audit event in the same transaction. If the version is stale, the API returns `409 Conflict` instead of overwriting newer data. This is needed because ordinary transactions do not by themselves know whether a client's read snapshot is stale."
+
+#### Sources: links, sections, required/optional
+- Required: BFP 08 database transactions.
+- Required: BFP 20 concurrency and races.
+- Required primary reference: PostgreSQL transaction isolation documentation.
+
+#### My questions, corrections, and revision items
+Reinforce that optimistic concurrency protects a domain contract around stale edits; it is not a replacement for every isolation, locking, or retry strategy. HTTP preconditions are deferred as a comparison topic.

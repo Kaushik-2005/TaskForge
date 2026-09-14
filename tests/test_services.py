@@ -16,7 +16,11 @@ def test_service_owns_task_status_transition_rule() -> None:
     task = service.create_task(project.id, TaskCreate(title="Draft checklist"))
 
     with pytest.raises(InvalidStateTransitionError):
-        service.update_task(project.id, task.id, TaskUpdate(status=TaskStatus.done))
+        service.update_task(
+            project.id,
+            task.id,
+            TaskUpdate(status=TaskStatus.done, expected_version=task.version),
+        )
 
     unchanged = service.get_task(project.id, task.id)
     assert unchanged.status == TaskStatus.todo
@@ -28,7 +32,11 @@ def test_store_does_not_enforce_task_status_transition_rule() -> None:
     task = store.create_task(project.id, TaskCreate(title="Draft checklist"))
     assert task is not None
 
-    updated = store.update_task(project.id, task.id, TaskUpdate(status=TaskStatus.done))
+    updated = store.update_task(
+        project.id,
+        task.id,
+        TaskUpdate(status=TaskStatus.done, expected_version=task.version),
+    )
 
     assert updated is not None
     assert updated.status == TaskStatus.done

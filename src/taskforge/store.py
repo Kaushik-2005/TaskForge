@@ -74,6 +74,7 @@ class InMemoryStore:
             project_id=project_id,
             title=payload.title,
             status=payload.status,
+            version=1,
             created_at=datetime.now(UTC),
         )
         self.tasks[project_id][task.id] = task
@@ -101,7 +102,10 @@ class InMemoryStore:
         task = self.get_task(project_id, task_id)
         if task is None:
             return None
-        changes = payload.model_dump(exclude_unset=True)
+        if task.version != payload.expected_version:
+            return None
+        changes = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
+        changes["version"] = task.version + 1
         updated = task.model_copy(update=changes)
         self.tasks[project_id][task_id] = updated
         return updated

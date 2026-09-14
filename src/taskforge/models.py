@@ -35,13 +35,14 @@ class TaskCreate(StrictModel):
 
 
 class TaskUpdate(StrictModel):
+    expected_version: int = Field(ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     status: TaskStatus | None = None
 
     @model_validator(mode="after")
     def require_valid_change(self) -> "TaskUpdate":
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be provided")
+        if self.title is None and self.status is None:
+            raise ValueError("At least one task field must be provided")
         if "title" in self.model_fields_set and self.title is None:
             raise ValueError("Task title cannot be null")
         return self
@@ -52,6 +53,7 @@ class TaskRead(BaseModel):
     project_id: UUID
     title: str
     status: TaskStatus
+    version: int
     created_at: datetime
 
 

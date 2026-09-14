@@ -197,3 +197,13 @@
 - Weak areas / incomplete work: Legacy unauthenticated project/task routes still exist and need explicit compatibility, migration, or removal handling.
 - Exact next action: Decide how to handle legacy `/api/v1/projects...` routes now that authenticated workspace routes exist.
 - Current repository state / relevant uncommitted work: Day 9 implementation and documentation changes are uncommitted; earlier Week 1 and Day 8 work also remains uncommitted.
+## 2026-09-14 - Day 10 / W2.3 - Optimistic task concurrency
+- Starting point: Day 9 authorization was complete, and task updates could still accept stale client snapshots without a version contract.
+- Concepts and work covered: Lost updates, optimistic concurrency, version-checked writes, `409 Conflict`, and audit events committed with the task update.
+- Learner evidence: Learner correctly explained the stale-version lost-update scenario and chose request-body `expected_version` with `409 Conflict` for TaskForge.
+- Files changed: `migrations/versions/0003_task_versions_audit_events.py`, task models/repositories/services/API error mapping, concurrency tests, and Day 10 docs.
+- Commands run and outcomes: Focused ruff check passed. Focused pytest for services, validation, project/task routes, authorization, and PostgreSQL persistence passed with `59 passed`. Full ruff check passed. Full ruff format check reported `41 files already formatted`. Full pytest passed with `78 passed` and two dependency deprecation warnings.
+- Problems and resolutions: Authorization task updates initially referenced `AuditEventRow` without importing it; added the import and reran focused tests successfully.
+- Weak areas / incomplete work: HTTP ETag/If-Match preconditions and row-lock experiments are deferred. No high-contention load test was run.
+- Exact next action: Start Day 11 / W2.4 by inspecting query plans and adding a workload-driven index plus deterministic cursor pagination.
+- Current repository state / relevant uncommitted work: Day 10 implementation and documentation changes are uncommitted along with prior roadmap work.

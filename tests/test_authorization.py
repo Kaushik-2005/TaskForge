@@ -380,7 +380,11 @@ def test_owner_can_update_workspace_task(
         response = client.patch(
             f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}"
             f"/tasks/{task['id']}",
-            json={"title": "Updated checklist", "status": "in_progress"},
+            json={
+                "title": "Updated checklist",
+                "status": "in_progress",
+                "expected_version": task["version"],
+            },
             headers={"X-CSRF-Token": owner.csrf_token},
         )
 
@@ -401,7 +405,7 @@ def test_workspace_task_update_keeps_status_transition_rule(
         response = client.patch(
             f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}"
             f"/tasks/{task['id']}",
-            json={"status": "done"},
+            json={"status": "done", "expected_version": task["version"]},
             headers={"X-CSRF-Token": owner.csrf_token},
         )
 
@@ -657,3 +661,31 @@ def test_cannot_remove_last_workspace_owner(
         )
 
     assert response.status_code == 409
+
+
+def test_workspace_task_stale_version_returns_conflict(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        task = create_workspace_task(client, workspace_id, project["id"], owner)
+
+        first = client.patch(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}"
+            f"/tasks/{task['id']}",
+            json={"title": "First update", "expected_version": task["version"]},
+            headers={"X-CSRF-Token": owner.csrf_token},
+        )
+        stale = client.patch(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}"
+            f"/tasks/{task['id']}",
+            json={"title": "Stale update", "expected_version": task["version"]},
+            headers={"X-CSRF-Token": owner.csrf_token},
+        )
+
+    assert first.status_code == 200
+    assert first.json()["version"] == task["version"] + 1
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "stale_task_version"

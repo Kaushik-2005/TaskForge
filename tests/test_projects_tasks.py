@@ -167,7 +167,11 @@ def test_task_crud_is_nested_under_project() -> None:
 
     update_response = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"title": "Ship checklist", "status": "in_progress"},
+        json={
+            "title": "Ship checklist",
+            "status": "in_progress",
+            "expected_version": task["version"],
+        },
     )
     assert update_response.status_code == 200
     assert update_response.json()["title"] == "Ship checklist"

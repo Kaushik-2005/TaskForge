@@ -12,16 +12,16 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-14
-- Roadmap day/module and implementation status: Day 10 / W2.3 transactions and concurrent writes started; Day 9 authorization route surface is implemented and validated.
+- Roadmap day/module and implementation status: Day 10 / W2.3 transactions and concurrent writes completed; version-checked task updates and audit events are implemented and validated.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
 - Middleware/error boundary: `src/taskforge/main.py` owns request ID propagation, structured access logs, and exception handlers for HTTP and validation errors.
 - Configuration layer: `src/taskforge/config.py` owns startup settings loaded from environment variables and validates environment/log-level values.
-- Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, and missing-versus-null semantics.
+- Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, missing-versus-null semantics, and the task update `expected_version` contract.
 - Service layer: `src/taskforge/services.py` owns legacy project/task application rules. `src/taskforge/authorization_service.py` owns authenticated workspace/project/task/membership authorization decisions for the Day 9 route slice.
 - Error model: `src/taskforge/errors.py` owns application exception types.
-- Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings. Alembic migrations live under `migrations/`.
+- Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD and version-checked task updates through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access and version-checked task updates. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings including task versions and audit events. Alembic migrations live under `migrations/`.
 - Worker/background layer: not implemented.
 
 ### File ownership
@@ -39,7 +39,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - `src/taskforge/errors.py`: application exception classes.
 - `src/taskforge/store.py`: in-memory project/task storage for focused tests.
 - `src/taskforge/db.py`: SQLAlchemy engine and session factory construction.
-- `src/taskforge/db_models.py`: SQLAlchemy ORM table mappings, including users, sessions, workspaces, memberships, projects, and tasks.
+- `src/taskforge/db_models.py`: SQLAlchemy ORM table mappings, including users, sessions, workspaces, memberships, projects, tasks, and audit events.
 - `src/taskforge/repositories.py`: PostgreSQL project/task repository implementation.
 - `src/taskforge/security.py`: password hashing and high-entropy token generation/hash helpers.
 - `src/taskforge/auth_repository.py`: PostgreSQL user/session persistence for authentication.
@@ -72,15 +72,15 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: optional case-insensitive project-name filtering with memory and PostgreSQL tests.
 - Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
 - Implemented: sessions table migration, password/token security helpers, and AuthRepository tests for active, expired, revoked, and missing sessions.
-- Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; and task parent-child swap protection.
+- Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; task parent-child swap protection; version-checked task PATCH requests; and audit events for successful task updates.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting.
 - Deleting a project deletes its tasks through database cascade behavior in PostgreSQL and explicit cleanup in the memory test store.
 - Task item routes verify the parent project exists before resolving the task through the service layer.
 - Path IDs must be valid UUIDs before storage lookup.
-- Task status cannot move directly from `todo` to `done`; `TaskForgeService` owns this rule.
-- PostgreSQL is now the default runtime persistence backend. A configured default workspace owns unauthenticated development projects until auth/workspace isolation arrives.
+- Task status cannot move directly from `todo` to `done`; services own this rule. Task updates require the caller to supply the version they edited, and repositories update only if the durable row still has that version.
+- PostgreSQL is now the default runtime persistence backend. Workspace-scoped routes enforce membership authorization; legacy unauthenticated development routes still use a configured default workspace until that route surface is reconciled.
 
 ### Request and background-job flows
 - Health request flow:
@@ -95,7 +95,7 @@ client -> middleware -> FastAPI route -> health handler -> middleware/log -> res
 client -> middleware -> /api/v1 route -> request DB session -> service -> PostgresStore -> PostgreSQL -> commit/rollback -> response
 ```
 
-- Background jobs are planned for Week 3 and do not exist.
+- Task update flow includes a conditional version check and audit insert in the same transaction. Background jobs are planned for Week 3 and do not exist.
 
 ### High-level diagram
 ```mermaid
@@ -109,7 +109,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, and CI do not exist yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates now have optimistic concurrency protection. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, query-plan/index work, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -510,29 +510,50 @@ Related: ADR-006. Next design step is reconciliation of the legacy unauthenticat
 
 ### Day 10 - W2.3: Transactions and concurrent writes
 - Calendar date(s): 2026-09-14
-- Status: In Progress
+- Status: Completed
 
 #### What changed
-No runtime architecture change yet. Day 10 starts from the PostgreSQL-backed, membership-scoped API and will add concurrency protection for task updates.
+Added task row versions and an `audit_events` table through Alembic migration `0003_task_versions_audit_events`. `TaskRead` now exposes `version`, and `TaskUpdate` requires `expected_version`. Legacy and workspace-scoped task update repositories now update only when the stored row version matches the caller's expected version, increment the version on success, and write a task audit event in the same transaction.
 
 #### Why the design changed
-Task updates can be made by multiple clients. Without an explicit concurrency contract, the later update can silently overwrite the earlier update even though each individual request uses a database transaction.
+A transaction makes each request atomic, but it does not know whether the client edited a stale snapshot. Version-checked writes prevent the second writer from silently overwriting a newer committed task update.
 
 #### Boundary placement and ownership
-Proposed: database rows own durable version state, the repository owns conditional update SQL, the service owns stale-version conflict semantics and audit-event atomicity, and the API owns the public request/response contract.
+The API owns the public PATCH contract and maps stale updates to `409 Conflict`. Services own the stale-version domain outcome and keep the existing status-transition rule. Repositories own the conditional SQL update and audit-event insert. PostgreSQL owns durable version and audit rows. The request-scoped session still owns the final commit or rollback.
 
 #### API, data, and compatibility impact
-Pending. The likely contract is version-based stale update detection with `409 Conflict`, unless HTTP precondition headers are chosen during the design exercise.
+Task PATCH bodies now require `expected_version` with a positive integer. Successful task updates return the next task `version`. Stale versions return `409 stale_task_version`. Older clients that omit `expected_version` receive validation errors. The schema adds `tasks.version` and `audit_events`.
 
 #### Request / job flow
-Pending implementation.
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Service
+    participant Repo
+    participant PG as PostgreSQL
+    Client->>API: PATCH task with expected_version
+    API->>Service: validated update request
+    Service->>Repo: conditional update
+    Repo->>PG: UPDATE ... WHERE version matches
+    alt row updated
+        Repo->>PG: insert audit event
+        API->>PG: commit
+    else stale version
+        Service-->>API: stale version error
+        API-->>Client: 409 Conflict
+    end
+```
 
 #### Verification and evidence
-Not yet run for Day 10.
+- Focused ruff check on changed files: passed.
+- Focused pytest for services, validation, project/task routes, authorization, and PostgreSQL persistence: `59 passed`, with two dependency warnings.
+- `./.venv/Scripts/python.exe -m ruff check .`: passed.
+- `./.venv/Scripts/python.exe -m ruff format --check .`: `41 files already formatted`.
+- `./.venv/Scripts/python.exe -m pytest -q`: `78 passed`, with two dependency warnings.
 
 #### Known limitations after this day
-Day 10 has not yet implemented row versions, audit events, or concurrent update tests.
+No high-contention load test, explicit deadlock exercise, or HTTP ETag/If-Match contract was implemented. Audit events currently record task update versions only, not a full before/after field diff.
 
 #### Related decisions and next design step
-Next design step is deciding the conditional update contract: body version with `409` versus HTTP precondition with `412`.
-
+Related: ADR-007. Next design step is Day 11 query-plan and index work.

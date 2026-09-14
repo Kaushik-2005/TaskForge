@@ -88,7 +88,7 @@ def test_null_project_name_is_rejected_but_missing_task_title_is_allowed() -> No
 
     task_response = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"status": "in_progress"},
+        json={"status": "in_progress", "expected_version": task["version"]},
     )
     assert task_response.status_code == 200
     assert task_response.json()["title"] == "Draft checklist"
@@ -102,7 +102,7 @@ def test_task_cannot_jump_from_todo_to_done() -> None:
 
     response = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"status": "done"},
+        json={"status": "done", "expected_version": task["version"]},
     )
 
     assert response.status_code == 409
@@ -121,13 +121,13 @@ def test_task_can_move_from_todo_to_in_progress_to_done() -> None:
 
     first = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"status": "in_progress"},
+        json={"status": "in_progress", "expected_version": task["version"]},
     )
     assert first.status_code == 200
 
     second = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"status": "done"},
+        json={"status": "done", "expected_version": first.json()["version"]},
     )
     assert second.status_code == 200
     assert second.json()["status"] == "done"
@@ -158,7 +158,11 @@ def test_null_task_title_is_rejected_even_with_other_changes() -> None:
 
     response = client.patch(
         f"/api/v1/projects/{project['id']}/tasks/{task['id']}",
-        json={"title": None, "status": "in_progress"},
+        json={
+            "title": None,
+            "status": "in_progress",
+            "expected_version": task["version"],
+        },
     )
 
     assert response.status_code == 422

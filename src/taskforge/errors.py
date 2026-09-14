@@ -28,6 +28,11 @@ class PermissionDeniedError(TaskForgeError):
     message = "Permission denied"
 
 
+class StaleTaskVersionError(TaskForgeError):
+    code = "stale_task_version"
+    message = "Task was modified by another request"
+
+
 class UserNotFoundError(TaskForgeError):
     code = "not_found"
     message = "User not found"

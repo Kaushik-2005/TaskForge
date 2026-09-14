@@ -1,10 +1,10 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from taskforge.config import Settings
-from taskforge.db_models import ProjectRow, TaskRow, WorkspaceRow
+from taskforge.db_models import AuditEventRow, ProjectRow, TaskRow, WorkspaceRow
 from taskforge.models import (
     ProjectCreate,
     ProjectRead,
@@ -95,6 +95,7 @@ class PostgresStore:
             project_id=project_id,
             title=payload.title,
             status=payload.status.value,
+            version=1,
         )
         self.session.add(task)
         self.session.flush()
@@ -128,18 +129,34 @@ class PostgresStore:
         task_id: UUID,
         payload: TaskUpdate,
     ) -> TaskRead | None:
+        values: dict[str, object] = {"version": TaskRow.version + 1}
+        if payload.title is not None:
+            values["title"] = payload.title
+        if payload.status is not None:
+            values["status"] = payload.status.value
+
         row = self.session.scalar(
-            select(TaskRow).where(
+            update(TaskRow)
+            .where(
                 TaskRow.project_id == project_id,
                 TaskRow.id == task_id,
+                TaskRow.version == payload.expected_version,
             )
+            .values(**values)
+            .returning(TaskRow)
         )
         if row is None:
             return None
-        if payload.title is not None:
-            row.title = payload.title
-        if payload.status is not None:
-            row.status = payload.status.value
+
+        self.session.add(
+            AuditEventRow(
+                id=uuid4(),
+                task_id=row.id,
+                event_type="task.updated",
+                previous_version=payload.expected_version,
+                new_version=row.version,
+            )
+        )
         self.session.flush()
         return self._task_read(row)
 
@@ -175,5 +192,6 @@ class PostgresStore:
             project_id=row.project_id,
             title=row.title,
             status=TaskStatus(row.status),
+            version=row.version,
             created_at=row.created_at,
         )
