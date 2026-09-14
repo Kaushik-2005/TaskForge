@@ -461,3 +461,54 @@ A concise explanation: "TaskForge prevents silent lost updates by making task PA
 
 #### My questions, corrections, and revision items
 Reinforce that optimistic concurrency protects a domain contract around stale edits; it is not a replacement for every isolation, locking, or retry strategy. HTTP preconditions are deferred as a comparison topic.
+### Day 11 - W2.4: Indexes and query performance
+#### Concept and why it exists
+Indexes are separate data structures that can reduce the work needed for specific query shapes. PostgreSQL does not use an index just because it exists; it chooses the plan with the lowest estimated cost based on table statistics, selectivity, ordering needs, and I/O cost assumptions.
+
+#### Mental model and small example
+For TaskForge task lists, the important query shape is:
+
+```sql
+SELECT *
+FROM tasks
+WHERE project_id = :project_id
+ORDER BY created_at, id
+LIMIT :page_size;
+```
+
+The matching index is `(project_id, created_at, id)`: first narrow to one project, then read tasks in the exact order required, then stop at the page size. `id` is included because `created_at` is not unique.
+
+#### What happens internally
+`EXPLAIN (ANALYZE, BUFFERS)` shows the chosen plan, actual row counts, execution time, and buffer activity. In the Day 11 lab, PostgreSQL used `ix_tasks_project_created_at_id` for both first-page and cursor queries. The cursor predicate became part of the index condition:
+
+```sql
+(project_id = :project_id)
+AND (ROW(created_at, id) > ROW(:after_created_at, :after_id))
+```
+
+#### Boundaries, failure modes, and common mistakes
+- A low-selectivity predicate may not benefit from an index.
+- A small table may be cheaper to scan than to access through an index.
+- Separate indexes on `project_id`, `created_at`, and `id` do not provide the same ordered access path as one composite index.
+- `OFFSET` still walks and discards earlier rows, even when the final response contains only 20 rows.
+- Ordering only by `created_at` is unstable when timestamps tie; cursor pagination needs `(created_at, id)` in both the `ORDER BY` and cursor predicate.
+
+#### Alternatives and trade-offs
+Offset pagination is simple and supports arbitrary page numbers, but deeper pages do more discarded work and can shift under concurrent writes. Cursor pagination is efficient for next-page navigation and stable with a deterministic tie-breaker, but clients must carry cursor values and cannot jump directly to page N. Opaque encoded cursors are cleaner for public APIs, but Day 11 uses explicit `after_created_at` and `after_id` to keep the mechanics visible.
+
+#### TaskForge application
+Day 11 added deterministic task ordering by `(created_at, id)`, optional task-list cursor parameters `after_created_at` and `after_id`, validation requiring both cursor parts together, matching memory/PostgreSQL behavior, a PostgreSQL migration for `ix_tasks_project_created_at_id`, and a regression test proving tied timestamps do not skip rows.
+
+#### Exercise and validation observations
+Learner correctly explained planner cost-based index choice, composite index order, offset cost growth, and the tie-breaker requirement. In a disposable `taskforge_day11` database with 10,000 tasks, the cursor query returned 20 rows using the composite index with 3 shared buffer hits and about 0.244 ms execution time. The equivalent `LIMIT 20 OFFSET 5000` query scanned 5,020 index rows, hit 101 buffers, and took about 2.960 ms.
+
+#### Interview explanation
+A concise explanation: "TaskForge uses cursor pagination for task lists because offset pagination must walk and discard all earlier rows. We order by `(created_at, id)` because timestamps can tie, and the `id` makes the order unique. The index `(project_id, created_at, id)` matches the filter and ordering, so PostgreSQL can seek into one project's ordered tasks and read only the next page. EXPLAIN confirmed the cursor query used the index without a sort and did much less buffer work than the deep offset query."
+
+#### Sources: links, sections, required/optional
+- Required: BFP 08 index and query-plan sections.
+- Required: BFP 18 database bottleneck sections.
+- Required primary reference: PostgreSQL EXPLAIN documentation.
+
+#### My questions, corrections, and revision items
+Before adding future indexes, first identify the query shape and measure with `EXPLAIN (ANALYZE, BUFFERS)`. Encoded cursor tokens and multiple sort modes are deferred.

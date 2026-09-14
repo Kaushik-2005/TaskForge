@@ -12,16 +12,16 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-14
-- Roadmap day/module and implementation status: Day 10 / W2.3 transactions and concurrent writes completed; version-checked task updates and audit events are implemented and validated.
+- Roadmap day/module and implementation status: Day 11 / W2.4 indexes and query performance completed; deterministic task cursor pagination and the task-list index are implemented and measured.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
 - Middleware/error boundary: `src/taskforge/main.py` owns request ID propagation, structured access logs, and exception handlers for HTTP and validation errors.
 - Configuration layer: `src/taskforge/config.py` owns startup settings loaded from environment variables and validates environment/log-level values.
-- Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, missing-versus-null semantics, and the task update `expected_version` contract.
+- Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, missing-versus-null semantics, and the task update `expected_version` contract. `src/taskforge/api.py` owns task cursor query-parameter validation.
 - Service layer: `src/taskforge/services.py` owns legacy project/task application rules. `src/taskforge/authorization_service.py` owns authenticated workspace/project/task/membership authorization decisions for the Day 9 route slice.
 - Error model: `src/taskforge/errors.py` owns application exception types.
-- Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD and version-checked task updates through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access and version-checked task updates. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings including task versions and audit events. Alembic migrations live under `migrations/`.
+- Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD, cursor task listing, and version-checked task updates through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access, cursor task listing, and version-checked task updates. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings including task versions and audit events. Alembic migrations live under `migrations/`, including task-list cursor index migration `0004`.
 - Worker/background layer: not implemented.
 
 ### File ownership
@@ -72,14 +72,14 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: optional case-insensitive project-name filtering with memory and PostgreSQL tests.
 - Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
 - Implemented: sessions table migration, password/token security helpers, and AuthRepository tests for active, expired, revoked, and missing sessions.
-- Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; task parent-child swap protection; version-checked task PATCH requests; and audit events for successful task updates.
+- Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; task parent-child swap protection; version-checked task PATCH requests; audit events for successful task updates; deterministic task cursor pagination; and a measured `(project_id, created_at, id)` task-list index.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting.
 - Deleting a project deletes its tasks through database cascade behavior in PostgreSQL and explicit cleanup in the memory test store.
 - Task item routes verify the parent project exists before resolving the task through the service layer.
 - Path IDs must be valid UUIDs before storage lookup.
-- Task status cannot move directly from `todo` to `done`; services own this rule. Task updates require the caller to supply the version they edited, and repositories update only if the durable row still has that version.
+- Task status cannot move directly from `todo` to `done`; services own this rule. Task updates require the caller to supply the version they edited, and repositories update only if the durable row still has that version. Task list order is deterministic by `(created_at, id)`, and cursor predicates use the same pair.
 - PostgreSQL is now the default runtime persistence backend. Workspace-scoped routes enforce membership authorization; legacy unauthenticated development routes still use a configured default workspace until that route surface is reconciled.
 
 ### Request and background-job flows
@@ -95,7 +95,7 @@ client -> middleware -> FastAPI route -> health handler -> middleware/log -> res
 client -> middleware -> /api/v1 route -> request DB session -> service -> PostgresStore -> PostgreSQL -> commit/rollback -> response
 ```
 
-- Task update flow includes a conditional version check and audit insert in the same transaction. Background jobs are planned for Week 3 and do not exist.
+- Task update flow includes a conditional version check and audit insert in the same transaction. Task list flow can use `after_created_at` plus `after_id` to continue after a stable cursor. Background jobs are planned for Week 3 and do not exist.
 
 ### High-level diagram
 ```mermaid
@@ -109,7 +109,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates now have optimistic concurrency protection. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, query-plan/index work, and CI do not exist yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates have optimistic concurrency protection, and task lists have cursor pagination backed by a measured composite index. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, cache, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -557,3 +557,50 @@ No high-contention load test, explicit deadlock exercise, or HTTP ETag/If-Match 
 
 #### Related decisions and next design step
 Related: ADR-007. Next design step is Day 11 query-plan and index work.
+### Day 11 - W2.4: Indexes and query performance
+- Calendar date(s): 2026-09-14
+- Status: Completed
+
+#### What changed
+Added deterministic task list ordering by `(created_at, id)`, optional cursor parameters `after_created_at` and `after_id`, validation that both cursor parts are supplied together, matching memory and PostgreSQL cursor behavior, and Alembic migration `0004_add_task_list_cursor_index.py` for `ix_tasks_project_created_at_id` on `(project_id, created_at, id)`.
+
+#### Why the design changed
+Task lists were ordered only by `created_at`, which is not unique. Offset pagination also gets more expensive on deeper pages because the database still walks skipped rows. Cursor pagination plus a composite index gives TaskForge a stable next-page contract that matches the measured query shape.
+
+#### Boundary placement and ownership
+`src/taskforge/api.py` owns cursor query-parameter validation. Services pass cursor values through without deciding SQL shape. `src/taskforge/repositories.py` and `src/taskforge/authorization_repository.py` own the tuple cursor predicate and deterministic ordering. PostgreSQL owns the composite index. `src/taskforge/store.py` mirrors the behavior for focused memory tests.
+
+#### API, data, and compatibility impact
+Task list endpoints still accept `page_size`. They now also accept `after_created_at` and `after_id`; supplying only one cursor part returns `422 validation_error`. Existing clients that omit cursor parameters still get the first page. The schema adds index `ix_tasks_project_created_at_id`.
+
+#### Request / job flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Service
+    participant Repo
+    participant PG as PostgreSQL
+    Client->>API: GET tasks with optional cursor
+    API->>API: validate cursor pair
+    API->>Service: page_size + cursor
+    Service->>Repo: list tasks
+    Repo->>PG: WHERE project_id and cursor ORDER BY created_at,id
+    PG-->>Repo: next page
+    Repo-->>Client: TaskRead list
+```
+
+#### Verification and evidence
+- Focused pytest for PostgreSQL persistence, project/task routes, authorization, and services: `50 passed`, with two dependency warnings.
+- Full pytest: `79 passed`, with two dependency warnings.
+- Ruff check and format check passed.
+- Disposable `taskforge_day11` database seeded with 10,000 tasks.
+- First-page plan used `ix_tasks_project_created_at_id`, no `Sort`, returned 20 rows, hit 3 shared buffers, execution about 0.239 ms.
+- Cursor plan used the same index with `ROW(created_at, id) > ROW(...)`, returned 20 rows, hit 3 shared buffers, execution about 0.244 ms.
+- `LIMIT 20 OFFSET 5000` used the same index but scanned 5,020 rows, hit 101 shared buffers, execution about 2.960 ms.
+
+#### Known limitations after this day
+The cursor is explicit query parameters rather than an opaque encoded token. Only task list ordering is covered; project lists and membership lists still use simple first-page pagination. Concurrent inserts can change later pages around a cursor, which is normal for this contract and must be documented for clients.
+
+#### Related decisions and next design step
+Related: ADR-008. Next design step is Day 12 cache correctness and freshness policy.

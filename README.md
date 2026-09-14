@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 10 / W2.3 transactions and concurrent writes is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, and task update audit events. Memory storage remains available for focused unit-style tests.
+Day 11 / W2.4 indexes and query performance is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, task update audit events, deterministic task cursor pagination, and a measured task-list index. Memory storage remains available for focused unit-style tests.
 
 ## Records
 
@@ -89,7 +89,7 @@ Project and task API:
 - `PATCH /api/v1/projects/{project_id}`
 - `DELETE /api/v1/projects/{project_id}`
 - `POST /api/v1/projects/{project_id}/tasks`
-- `GET /api/v1/projects/{project_id}/tasks?page_size=20`
+- `GET /api/v1/projects/{project_id}/tasks?page_size=20&after_created_at=...&after_id=...`
 - `GET /api/v1/projects/{project_id}/tasks/{task_id}`
 - `PATCH /api/v1/projects/{project_id}/tasks/{task_id}` requires `expected_version`
 - `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
@@ -103,6 +103,7 @@ Validation behavior:
 - Malformed IDs return `422`; valid missing resources return `404`.
 - Task status cannot change directly from `todo` to `done`.
 - Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version` instead of silently overwriting newer data.
+- Task list cursor parameters `after_created_at` and `after_id` must be supplied together. Task lists order by `(created_at, id)` for deterministic pagination.
 - Every response includes `X-Request-ID`; incoming `X-Request-ID` is preserved.
 - Login sets an HttpOnly `taskforge_session` cookie and returns a CSRF token in the response body.
 - Unsafe project/task mutations with a session cookie require `X-CSRF-Token`.
@@ -112,7 +113,7 @@ Validation behavior:
 ## Limitations
 
 - Workspace-scoped project/task authorization is implemented. Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
-- No readiness/dependency health, public deployment profile, or CI exists yet.
+- No readiness/dependency health, cache, public deployment profile, or CI exists yet.
 
 
 

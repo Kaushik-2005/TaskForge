@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from taskforge.authorization_repository import AuthorizationRepository
@@ -201,12 +202,16 @@ class AuthorizationService:
         workspace_id: UUID,
         project_id: UUID,
         page_size: int,
+        after_created_at: datetime | None = None,
+        after_id: UUID | None = None,
     ) -> list[TaskRead]:
         tasks = self.repository.list_workspace_tasks_for_user(
             user_id=current_user.id,
             workspace_id=workspace_id,
             project_id=project_id,
             page_size=page_size,
+            after_created_at=after_created_at,
+            after_id=after_id,
         )
         if tasks is None:
             raise WorkspaceNotFoundError

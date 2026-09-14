@@ -75,3 +75,13 @@
 - Trade-offs and consequences: Clients must read the current task version and include it when updating. Older clients that omit `expected_version` now receive validation errors. HTTP precondition semantics remain available for a future API refinement.
 - Evidence: PostgreSQL tests prove a stale second writer cannot overwrite the first writer and that successful updates write one audit event in the same committed transaction. Full pytest passed with 78 tests.
 - Revisit trigger: Revisit if TaskForge exposes cache validators/ETags, needs partial merge behavior, or measures contention that requires pessimistic locking or retry policies.
+## ADR-008: Use cursor pagination and a composite task-list index
+- Date and module: 2026-09-14, Day 11 / W2.4
+- Status: Accepted
+- Context / constraints: TaskForge task lists are scoped to a project and ordered by creation time. Offset pagination does more discarded work as pages get deeper, and `created_at` alone is not unique.
+- Alternatives considered: Keep offset-only pagination; order only by `created_at`; use cursor pagination with `(created_at, id)`; add separate indexes on `project_id`, `created_at`, and `id`; add one composite index matching the query shape.
+- Decision: Task list queries order by `(created_at, id)` and accept an optional cursor made of `after_created_at` plus `after_id`. PostgreSQL has a composite index `ix_tasks_project_created_at_id` on `(project_id, created_at, id)`.
+- Reason: The composite index matches the filter and ordering path: find one project's tasks, read them in deterministic order, and stop at the page size. The `id` tie-breaker prevents skipping or duplicating rows with equal timestamps.
+- Trade-offs and consequences: Clients must carry both cursor values for subsequent pages. Cursor pagination does not support arbitrary page numbers. Concurrent inserts before or after the cursor may change what later pages show; this is documented as normal cursor-pagination behavior.
+- Evidence: A disposable `taskforge_day11` database with 10,000 tasks used `EXPLAIN (ANALYZE, BUFFERS)`. Cursor lookup used `ix_tasks_project_created_at_id`, returned 20 rows, hit 3 buffers, and executed in about 0.244 ms. Equivalent `LIMIT 20 OFFSET 5000` scanned 5,020 index rows, hit 101 buffers, and executed in about 2.960 ms. Full pytest passed with 79 tests.
+- Revisit trigger: Revisit when task search/filtering expands beyond project-scoped creation-order lists, when sort allowlists are added, or when measured production-like data shows a different query pattern dominates.

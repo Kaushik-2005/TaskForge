@@ -207,3 +207,13 @@
 - Weak areas / incomplete work: HTTP ETag/If-Match preconditions and row-lock experiments are deferred. No high-contention load test was run.
 - Exact next action: Start Day 11 / W2.4 by inspecting query plans and adding a workload-driven index plus deterministic cursor pagination.
 - Current repository state / relevant uncommitted work: Day 10 implementation and documentation changes are uncommitted along with prior roadmap work.
+## 2026-09-14 - Day 11 / W2.4 - Task list cursor pagination and index evidence
+- Starting point: Day 10 optimistic concurrency was complete. Task list queries were ordered by `created_at` only and had no cursor pagination contract.
+- Concepts and work covered: Planner cost choice, selectivity, composite index order, offset cost, cursor pagination, deterministic tie-breakers, and EXPLAIN evidence.
+- Learner evidence: Learner explained why PostgreSQL may ignore indexes, why `(project_id, created_at, id)` fits the task-list query, why offset work grows with page depth, and why `id` is required as a tie-breaker.
+- Files changed: `migrations/versions/0004_add_task_list_cursor_index.py`, `src/taskforge/api.py`, `src/taskforge/repositories.py`, `src/taskforge/authorization_repository.py`, `src/taskforge/services.py`, `src/taskforge/authorization_service.py`, `src/taskforge/store.py`, `tests/test_postgres_persistence.py`, README and docs.
+- Commands run and outcomes: Focused pytest passed with `50 passed`. Full pytest passed with `79 passed` and two dependency warnings. Ruff check and format check passed. Disposable `taskforge_day11` EXPLAIN plans showed cursor pagination using `ix_tasks_project_created_at_id` with 3 buffer hits, while `OFFSET 5000` scanned 5,020 rows and hit 101 buffers.
+- Problems and resolutions: Initial manual Alembic run failed because `taskforge_day11` did not exist; created the database in the running `taskforge-postgres-1` container, then migrated successfully. A full pytest run transiently reported failures, but rerun passed with 79 tests.
+- Weak areas / incomplete work: Opaque cursor tokens, additional sort modes, project-list cursor pagination, and concurrent pagination mutation behavior are deferred.
+- Exact next action: Start Day 12 / W2.5 cache correctness by explaining cache-aside, invalidation timing, TTL, and stale-fill races.
+- Current repository state / relevant uncommitted work: Day 11 implementation and documentation changes are uncommitted along with prior roadmap work.

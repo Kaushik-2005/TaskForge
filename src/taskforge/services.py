@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -33,7 +34,13 @@ class TaskForgeStore(Protocol):
     ) -> ProjectRead | None: ...
     def delete_project(self, project_id: UUID) -> bool: ...
     def create_task(self, project_id: UUID, payload: TaskCreate) -> TaskRead | None: ...
-    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead] | None: ...
+    def list_tasks(
+        self,
+        project_id: UUID,
+        page_size: int,
+        after_created_at: datetime | None = None,
+        after_id: UUID | None = None,
+    ) -> list[TaskRead] | None: ...
     def get_task(self, project_id: UUID, task_id: UUID) -> TaskRead | None: ...
     def update_task(
         self,
@@ -83,8 +90,19 @@ class TaskForgeService:
             raise ProjectNotFoundError
         return task
 
-    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead]:
-        tasks = self.store.list_tasks(project_id, page_size)
+    def list_tasks(
+        self,
+        project_id: UUID,
+        page_size: int,
+        after_created_at: datetime | None = None,
+        after_id: UUID | None = None,
+    ) -> list[TaskRead] | None:
+        tasks = self.store.list_tasks(
+            project_id,
+            page_size,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
         if tasks is None:
             raise ProjectNotFoundError
         return tasks

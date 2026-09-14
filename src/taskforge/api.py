@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -510,13 +510,24 @@ def list_workspace_tasks(
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     page_size: PageSize = 20,
+    after_created_at: datetime | None = None,
+    after_id: UUID | None = None,
 ) -> list[TaskRead]:
+    if (after_created_at is None) != (after_id is None):
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "validation_error",
+            "after_created_at and after_id must be supplied together",
+        )
+
     try:
         return authorization.list_workspace_tasks(
             current_user,
             workspace_id,
             project_id,
             page_size,
+            after_created_at=after_created_at,
+            after_id=after_id,
         )
     except TaskForgeError as exc:
         raise map_service_error(exc) from exc
@@ -687,9 +698,23 @@ def list_tasks(
     project_id: UUID,
     service: ServiceDep,
     page_size: PageSize = 20,
+    after_created_at: datetime | None = None,
+    after_id: UUID | None = None,
 ) -> list[TaskRead]:
+    if (after_created_at is None) != (after_id is None):
+        raise api_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "validation_error",
+            "after_created_at and after_id must be supplied together",
+        )
+
     try:
-        return service.list_tasks(project_id, page_size)
+        return service.list_tasks(
+            project_id,
+            page_size,
+            after_created_at=after_created_at,
+            after_id=after_id,
+        )
     except TaskForgeError as exc:
         raise map_service_error(exc) from exc
 

@@ -2,7 +2,7 @@
 
 ## Current scope
 
-TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, PostgreSQL-backed runtime persistence by default, optional project-name filtering, authentication with server-side sessions, workspace authorization, version-checked task updates, and task update audit events. Memory storage remains available only for focused tests.
+TaskForge is a local backend API with a live health endpoint, project/task CRUD, stricter serialization/validation boundaries, service-layer business rules, request IDs, structured access logs, startup settings validation, PostgreSQL-backed runtime persistence by default, optional project-name filtering, authentication with server-side sessions, workspace authorization, version-checked task updates, task update audit events, deterministic task cursor pagination, and a measured task-list index. Memory storage remains available only for focused tests.
 
 ## Supported endpoints
 
@@ -19,7 +19,7 @@ TaskForge is a local backend API with a live health endpoint, project/task CRUD,
 | PATCH | `/api/v1/projects/{project_id}` | Partially update a project's name. | `200 ProjectRead` |
 | DELETE | `/api/v1/projects/{project_id}` | Delete one project and its tasks. | `204 No Content` |
 | POST | `/api/v1/projects/{project_id}/tasks` | Create a task under a project. | `201 TaskRead`, with `Location` header |
-| GET | `/api/v1/projects/{project_id}/tasks?page_size=20` | List tasks for a project in creation order. | `200 list[TaskRead]` |
+| GET | `/api/v1/projects/{project_id}/tasks?page_size=20&after_created_at=...&after_id=...` | List tasks for a project in `(created_at, id)` order, optionally starting after a cursor. | `200 list[TaskRead]` |
 | GET | `/api/v1/projects/{project_id}/tasks/{task_id}` | Read one task under a project. | `200 TaskRead` |
 | PATCH | `/api/v1/projects/{project_id}/tasks/{task_id}` | Partially update task title and/or status with `expected_version`. | `200 TaskRead` |
 | DELETE | `/api/v1/projects/{project_id}/tasks/{task_id}` | Delete one task. | `204 No Content` |
@@ -37,7 +37,7 @@ Expected HTTP and validation errors use this envelope:
 }
 ```
 
-Validation errors use `422` and `code: validation_error`. Auth failures use `401 invalid_credentials` or `401 unauthenticated`; duplicate registration uses `409 email_already_registered`; missing/invalid CSRF uses `403 csrf_required`. Page size is bounded from 1 through 100. `name_contains` is optional, case-insensitive, and must not be empty when supplied. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`. Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version`.
+Validation errors use `422` and `code: validation_error`. Auth failures use `401 invalid_credentials` or `401 unauthenticated`; duplicate registration uses `409 email_already_registered`; missing/invalid CSRF uses `403 csrf_required`. Page size is bounded from 1 through 100. `name_contains` is optional, case-insensitive, and must not be empty when supplied. Unknown request fields are rejected. Path IDs must be valid UUIDs. Valid UUIDs that do not exist return `404`; malformed IDs return `422`. Task status cannot change directly from `todo` to `done`; that domain violation returns `409 invalid_state_transition`. Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version`. Task cursor parameters `after_created_at` and `after_id` must be supplied together or validation fails.
 
 ## Current non-goals
 
@@ -65,7 +65,7 @@ Results:
 
 - Ruff lint: passed.
 - Ruff format check: passed.
-- Pytest: `78 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
+- Pytest: `79 passed`, with two dependency deprecation warnings from FastAPI/Starlette test client internals. PostgreSQL integration tests create/drop isolated temporary databases and run Alembic migrations.
 
 Day 1 runtime smoke check observed: `StatusCode=200`, body `{"status":"ok"}`.
 
@@ -91,6 +91,7 @@ Current SQL guarantees tested:
 - Tasks cannot use a status outside `todo`, `in_progress`, `done`.
 - Tasks have a durable integer `version`; conditional updates require matching `expected_version` and increment the version on success.
 - Successful task updates insert an audit event in the same transaction.
+- Task listing uses deterministic `(created_at, id)` ordering and a PostgreSQL index on `(project_id, created_at, id)`.
 - Authorized task lookup joins memberships, projects, and tasks.
 - Project task counts include projects with zero tasks.
 
@@ -115,3 +116,12 @@ Task update responses include `version`. A task PATCH body must include the vers
 ```
 
 If the stored task version no longer matches, the API returns `409 stale_task_version` and does not apply the update. Successful updates increment the version and write a task audit event in the same database transaction.
+## Pagination contract
+
+Task lists are ordered by `(created_at, id)`. A client may request the next page by passing both cursor parts from the last task on the previous page:
+
+```http
+GET /api/v1/projects/{project_id}/tasks?page_size=20&after_created_at=2026-09-14T01:23:21Z&after_id=c14620de-44f2-48e2-b3fb-bc6b05846574
+```
+
+Supplying only one cursor part returns `422 validation_error`. The PostgreSQL query is backed by `ix_tasks_project_created_at_id` on `(project_id, created_at, id)`.

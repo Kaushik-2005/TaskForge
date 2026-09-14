@@ -80,14 +80,29 @@ class InMemoryStore:
         self.tasks[project_id][task.id] = task
         return task
 
-    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead] | None:
+    def list_tasks(
+        self,
+        project_id: UUID,
+        page_size: int,
+        after_created_at: datetime | None = None,
+        after_id: UUID | None = None,
+    ) -> list[TaskRead] | None:
         project_tasks = self.tasks.get(project_id)
         if project_tasks is None:
             return None
+
         ordered_tasks = sorted(
             project_tasks.values(),
-            key=lambda task: task.created_at,
+            key=lambda task: (task.created_at, task.id),
         )
+
+        if after_created_at is not None and after_id is not None:
+            ordered_tasks = [
+                task
+                for task in ordered_tasks
+                if (task.created_at, task.id) > (after_created_at, after_id)
+            ]
+
         return ordered_tasks[:page_size]
 
     def get_task(self, project_id: UUID, task_id: UUID) -> TaskRead | None:

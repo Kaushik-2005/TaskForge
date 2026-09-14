@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, tuple_, update
 from sqlalchemy.orm import Session
 
 from taskforge.config import Settings
@@ -101,15 +102,26 @@ class PostgresStore:
         self.session.flush()
         return self._task_read(task)
 
-    def list_tasks(self, project_id: UUID, page_size: int) -> list[TaskRead] | None:
+    def list_tasks(
+        self,
+        project_id: UUID,
+        page_size: int,
+        after_created_at: datetime | None = None,
+        after_id: UUID | None = None,
+    ) -> list[TaskRead] | None:
         if self._get_project_row(project_id) is None:
             return None
-        rows = self.session.scalars(
-            select(TaskRow)
-            .where(TaskRow.project_id == project_id)
-            .order_by(TaskRow.created_at)
-            .limit(page_size)
-        ).all()
+
+        statement = select(TaskRow).where(TaskRow.project_id == project_id)
+
+        if after_created_at is not None and after_id is not None:
+            statement = statement.where(
+                tuple_(TaskRow.created_at, TaskRow.id) > (after_created_at, after_id)
+            )
+
+        statement = statement.order_by(TaskRow.created_at, TaskRow.id).limit(page_size)
+
+        rows = self.session.scalars(statement).all()
         return [self._task_read(row) for row in rows]
 
     def get_task(self, project_id: UUID, task_id: UUID) -> TaskRead | None:

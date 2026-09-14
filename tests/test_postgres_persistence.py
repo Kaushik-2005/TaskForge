@@ -216,9 +216,9 @@ def test_task_update_and_audit_event_commit_together(
                 SELECT COUNT(*)
                 FROM audit_events
                 WHERE task_id = :task_id
-                  AND previous_version = :previous_version
-                  AND new_version = :new_version
-                  AND event_type = 'task.updated'
+                    AND previous_version = :previous_version
+                    AND new_version = :new_version
+                    AND event_type = 'task.updated'
                 """
             ),
             {
@@ -232,3 +232,51 @@ def test_task_update_and_audit_event_commit_together(
     engine.dispose()
     assert updated.version == 2
     assert audit_count == 1
+
+
+def test_task_cursor_pagination_uses_created_at_and_id_tiebreaker(
+    migrated_database_url: str,
+) -> None:
+    engine = create_engine(migrated_database_url)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = make_settings(migrated_database_url)
+
+    with session_factory() as session:
+        service = TaskForgeService(PostgresStore(session, settings))
+        project = service.create_project(ProjectCreate(name="Cursor project"))
+        created_tasks = [
+            service.create_task(project.id, TaskCreate(title="Task A")),
+            service.create_task(project.id, TaskCreate(title="Task B")),
+            service.create_task(project.id, TaskCreate(title="Task C")),
+        ]
+
+        tied_created_at = created_tasks[0].created_at
+        session.execute(
+            text(
+                """
+                UPDATE tasks
+                SET created_at = :created_at
+                WHERE project_id = :project_id
+                """
+            ),
+            {"created_at": tied_created_at, "project_id": project.id},
+        )
+        session.commit()
+
+    with session_factory() as session:
+        service = TaskForgeService(PostgresStore(session, settings))
+
+        all_tasks = service.list_tasks(project.id, page_size=10)
+        first_page = service.list_tasks(project.id, page_size=2)
+        second_page = service.list_tasks(
+            project.id,
+            page_size=10,
+            after_created_at=first_page[-1].created_at,
+            after_id=first_page[-1].id,
+        )
+
+    engine.dispose()
+
+    paged_ids = [task.id for task in first_page + second_page]
+    assert paged_ids == [task.id for task in all_tasks]
+    assert len(paged_ids) == 3
