@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 8 / W2.1 Authentication and sessions
-- Calendar date: 2026-09-11
-- Phase: Review
-- Status: Completed
+- Day / module: Day 10 / W2.3 Transactions and concurrent writes
+- Calendar date: 2026-09-13 to 2026-09-14
+- Phase: Orient
+- Status: In Progress
 - Mode: Guided Learning
-- Exact current task: Day 8 completed; next module is Day 9 authorization and tenant isolation.
-- Last updated: 2026-09-11
+- Exact current task: Start Day 10 by learning lost updates, MVCC, row locks, optimistic concurrency, and transaction boundaries.
+- Last updated: 2026-09-14
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -21,8 +21,8 @@
 | 6 | W1.6 | 2026-09-10 | Completed | Checked | Completed |
 | 7 | W1.7 | 2026-09-11 | Completed | Checked | Completed |
 | 8 | W2.1 | 2026-09-11 | Completed | Checked | Completed |
-| 9 | W2.2 | - | Not started | Not checked | Not started |
-| 10 | W2.3 | - | Not started | Not checked | Not started |
+| 9 | W2.2 | 2026-09-13 to 2026-09-14 | Completed | Checked | Completed |
+| 10 | W2.3 | 2026-09-14 | Not started | Not checked | In progress |
 | 11 | W2.4 | - | Not started | Not checked | Not started |
 | 12 | W2.5 | - | Not started | Not checked | Not started |
 | 13 | W2.6 | - | Not started | Not checked | Not started |
@@ -43,23 +43,23 @@
 | 28 | W4.7 | - | Not started | Not checked | Not started |
 
 ## Current module evidence
-- [x] Required selected reading completed or explained with source
-- [x] Core concept explained by learner
-- [x] Knowledge check passed
-- [x] Exercise attempted and reviewed
-- [x] Required project increment or design/lab completed
-- [x] Relevant validation executed
-- [x] Notes and corrections saved
-- [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 8 uses BFP 04 sessions/cookies/JWT/OAuth/OIDC plus OWASP session management and password storage guidance.
-- Learner answer or concise evidence: Learner correctly explained authentication as proving the requester is a particular user, authorization as deciding allowed operations such as workspace/project access, and password hashing as one-way verification rather than reversible storage.
-- Exercise path/result: Learner traced login success, expired `/me`, logout, and session theft correctly. Notes: local HTTP may need a documented non-Secure cookie exception; production HTTPS profile must use Secure cookies.
-- Changed files: `src/taskforge/api.py`, `src/taskforge/auth_service.py`, `src/taskforge/auth_repository.py`, `src/taskforge/security.py`, `src/taskforge/errors.py`, `src/taskforge/models.py`, `src/taskforge/config.py`, `src/taskforge/db_models.py`, `migrations/versions/0002_add_sessions.py`, `tests/test_security.py`, `tests/test_auth_repository.py`, `tests/test_auth_api.py`, `tests/conftest.py`, docs and README.
-- Commands and actual results: Initial migration test caught `sa.Columns` typo; corrected to `sa.Column`. `.\.venv\Scripts\python.exe -m pytest -q tests\test_security.py tests\test_auth_repository.py tests\test_auth_api.py` passed with `14 passed` and two dependency warnings. `.\.venv\Scripts\python.exe -m ruff check .` passed. `.\.venv\Scripts\python.exe -m pytest -q` passed with `48 passed` and two dependency warnings.
-- Design entry / related ADRs: `docs/design.md` Day 8 entry updated. ADR-005 records opaque PostgreSQL-backed sessions.
-- Untested assumptions: Project/task routes are not yet authorization-protected; Day 9 will bind operations to users, memberships, roles, and workspaces. Local HTTP uses a documented non-Secure-cookie exception.
-- Weak concepts: Continue reinforcing that authentication proves identity but does not yet authorize project/task access.
-- Optional work deferred: OAuth/OIDC remains comparison-only unless explicitly requested.
+- [ ] Required selected reading completed or explained with source
+- [ ] Core concept explained by learner
+- [ ] Knowledge check passed
+- [ ] Exercise attempted and reviewed
+- [ ] Required project increment or design/lab completed
+- [ ] Relevant validation executed
+- [ ] Notes and corrections saved
+- [ ] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 10 uses BFP 08 transactions, BFP 20 races, and PostgreSQL transaction isolation documentation.
+- Learner answer or concise evidence: Pending Day 10 transaction/concurrency explanation.
+- Exercise path/result: Pending lost-update reproduction exercise.
+- Changed files: Pending Day 10.
+- Commands and actual results: Pending Day 10.
+- Design entry / related ADRs: Pending Day 10 transaction/concurrency design entry.
+- Untested assumptions: Need to prove concurrent task updates cannot silently overwrite each other. Legacy unauthenticated project/task routes still exist as a tracked limitation from Day 9.
+- Weak concepts: Transactions do not automatically prevent every race; clarify lost updates and isolation levels.
+- Optional work deferred: HTTP precondition headers are optional comparison; Day 10 can use version-based `409` if simpler.
 ## Weekly gates
 - [x] Week 1: Durable validated CRUD
 - [ ] Week 2: Isolated multi-user API
@@ -71,11 +71,18 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 9 / W2.2, Orient
-- File/function/section: roadmap.md Day 9; authorization, memberships, roles, and tenant-scoped repository paths
-- Next question or exercise: Write an owner/admin/member/outsider permission matrix for workspaces, projects, and tasks.
-- Next build task: Day 9 authorization: permission matrix, membership management, and tenant-scoped repository paths.
-- Next validation command: `.\.venv\Scripts\python.exe -m pytest -q`
+- Module and phase: Day 10 / W2.3, Orient
+- File/function/section: `src/taskforge/db_models.py`, `src/taskforge/repositories.py`, `src/taskforge/services.py`, `src/taskforge/api.py`, transaction/versioning design
+- Next question or exercise: Explain how two concurrent task updates can create a lost update under read committed isolation.
+- Next build task: Add version-based conditional task updates and audit events in one transaction.
+- Next validation command: `.\.venv\Scripts\python.exe -m pytest -q tests\test_postgres_persistence.py` plus new concurrency tests
+
+
+
+
+
+
+
 
 
 

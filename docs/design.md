@@ -11,17 +11,17 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-11
-- Roadmap day/module and implementation status: Day 8 / W2.1 authentication and sessions completed; Day 9 authorization is next.
+- Last updated: 2026-09-14
+- Roadmap day/module and implementation status: Day 10 / W2.3 transactions and concurrent writes started; Day 9 authorization route surface is implemented and validated.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, and service-error mapping.
 - Middleware/error boundary: `src/taskforge/main.py` owns request ID propagation, structured access logs, and exception handlers for HTTP and validation errors.
 - Configuration layer: `src/taskforge/config.py` owns startup settings loaded from environment variables and validates environment/log-level values.
 - Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, and missing-versus-null semantics.
-- Service layer: `src/taskforge/services.py` owns application rules and missing-resource decisions.
+- Service layer: `src/taskforge/services.py` owns legacy project/task application rules. `src/taskforge/authorization_service.py` owns authenticated workspace/project/task/membership authorization decisions for the Day 9 route slice.
 - Error model: `src/taskforge/errors.py` owns application exception types.
-- Persistence layer: `src/taskforge/repositories.py` owns PostgreSQL CRUD through SQLAlchemy sessions. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings. Alembic migrations live under `migrations/`.
+- Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings. Alembic migrations live under `migrations/`.
 - Worker/background layer: not implemented.
 
 ### File ownership
@@ -72,6 +72,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: optional case-insensitive project-name filtering with memory and PostgreSQL tests.
 - Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
 - Implemented: sessions table migration, password/token security helpers, and AuthRepository tests for active, expired, revoked, and missing sessions.
+- Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; and task parent-child swap protection.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting.
@@ -108,7 +109,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Tenant authorization, worker, readiness check, global payload byte-size limit, and CI do not exist yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -459,4 +460,79 @@ Authentication proves identity, but project/task routes are not yet authorizatio
 
 #### Related decisions and next design step
 Related: ADR-005 records opaque PostgreSQL-backed sessions. Next design step is Day 9 authorization and tenant isolation.
+
+
+### Day 9 - W2.2: Authorization and tenant isolation
+- Calendar date(s): 2026-09-13 to 2026-09-14
+- Status: Completed
+
+#### What changed
+Added `AuthorizationRepository` and `AuthorizationService` for authenticated workspace/project/task operations. Added workspace-scoped project read, update, and delete routes under `/api/v1/workspaces/{workspace_id}/projects/{project_id}`. Added workspace-scoped task create, list, read, update, and delete routes under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`. Added membership add/list/update/delete routes under `/api/v1/workspaces/{workspace_id}/memberships`. Added tests for owner success, outsider `404`, member/admin/owner role behavior, duplicate membership `409`, last-owner protection, member project-delete `403`, and task parent-child swap protection.
+
+#### Why the design changed
+Authentication only proves who the requester is. Day 9 binds data access to workspace membership so users cannot read or mutate another tenant's memberships, projects, or tasks by guessing IDs.
+
+#### Boundary placement and ownership
+`src/taskforge/api.py` owns authenticated route dependencies, CSRF for unsafe methods, and HTTP mapping. `src/taskforge/authorization_service.py` owns authorization outcomes: invisible/not found versus forbidden. `src/taskforge/authorization_repository.py` owns membership-scoped SQL lookups, task parent-child checks, role checks, duplicate checks, and last-owner checks. Legacy `/api/v1/projects` routes still use `TaskForgeService` and are not the final multi-user authorization surface.
+
+#### API, data, and compatibility impact
+Added authenticated workspace membership, project, and task routes. Cross-tenant or nonexistent membership/project/task access returns `404`. In-tenant role denial returns `403`. Duplicate membership and last-owner violations return `409`. Existing legacy project/task routes remain present for now.
+
+#### Request / job flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Auth
+    participant Authz
+    participant PG as PostgreSQL
+    Client->>API: workspace membership/project/task request
+    API->>Auth: resolve session user
+    API->>Authz: user + workspace + membership/project/task
+    Authz->>PG: membership-scoped lookup
+    Authz-->>API: resource, 404, 403, or 409
+```
+
+#### Verification and evidence
+- `\.venv\Scripts\python.exe -m pytest -q tests\test_authorization.py`: `27 passed`, with two dependency warnings.
+- `\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `\.venv\Scripts\python.exe -m ruff format --check .`: passed.
+- `\.venv\Scripts\python.exe -m pytest -q`: `75 passed`, with two dependency warnings.
+
+#### Known limitations after this day
+Legacy unauthenticated project/task routes still exist and must be reconciled later in Week 2.
+
+#### Related decisions and next design step
+Related: ADR-006. Next design step is reconciliation of the legacy unauthenticated project/task route surface.
+
+
+
+
+### Day 10 - W2.3: Transactions and concurrent writes
+- Calendar date(s): 2026-09-14
+- Status: In Progress
+
+#### What changed
+No runtime architecture change yet. Day 10 starts from the PostgreSQL-backed, membership-scoped API and will add concurrency protection for task updates.
+
+#### Why the design changed
+Task updates can be made by multiple clients. Without an explicit concurrency contract, the later update can silently overwrite the earlier update even though each individual request uses a database transaction.
+
+#### Boundary placement and ownership
+Proposed: database rows own durable version state, the repository owns conditional update SQL, the service owns stale-version conflict semantics and audit-event atomicity, and the API owns the public request/response contract.
+
+#### API, data, and compatibility impact
+Pending. The likely contract is version-based stale update detection with `409 Conflict`, unless HTTP precondition headers are chosen during the design exercise.
+
+#### Request / job flow
+Pending implementation.
+
+#### Verification and evidence
+Not yet run for Day 10.
+
+#### Known limitations after this day
+Day 10 has not yet implemented row versions, audit events, or concurrent update tests.
+
+#### Related decisions and next design step
+Next design step is deciding the conditional update contract: body version with `409` versus HTTP precondition with `412`.
 

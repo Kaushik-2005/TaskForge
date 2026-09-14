@@ -8,6 +8,11 @@ class ProjectNotFoundError(TaskForgeError):
     message = "Project not found"
 
 
+class WorkspaceNotFoundError(TaskForgeError):
+    code = "not_found"
+    message = "Workspace not found"
+
+
 class TaskNotFoundError(TaskForgeError):
     code = "not_found"
     message = "Task not found"
@@ -16,6 +21,26 @@ class TaskNotFoundError(TaskForgeError):
 class InvalidStateTransitionError(TaskForgeError):
     code = "invalid_state_transition"
     message = "Task status cannot change directly from todo to done"
+
+
+class PermissionDeniedError(TaskForgeError):
+    code = "forbidden"
+    message = "Permission denied"
+
+
+class UserNotFoundError(TaskForgeError):
+    code = "not_found"
+    message = "User not found"
+
+
+class DuplicateMembershipError(TaskForgeError):
+    code = "duplicate_membership"
+    message = "User is already a member of this workspace"
+
+
+class LastOwnerError(TaskForgeError):
+    code = "last_owner"
+    message = "Workspace must keep at least one owner"
 
 
 class AuthError(TaskForgeError):

@@ -7,19 +7,29 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 
 from taskforge.auth_repository import AuthRepository
 from taskforge.auth_service import AuthService
+from taskforge.authorization_repository import AuthorizationRepository
+from taskforge.authorization_service import AuthorizationService
 from taskforge.errors import (
     AuthError,
     CsrfError,
+    DuplicateMembershipError,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     InvalidStateTransitionError,
+    LastOwnerError,
+    PermissionDeniedError,
     ProjectNotFoundError,
     TaskForgeError,
     TaskNotFoundError,
     UnauthenticatedError,
+    UserNotFoundError,
+    WorkspaceNotFoundError,
 )
 from taskforge.models import (
     AuthSessionRead,
+    MembershipCreate,
+    MembershipRead,
+    MembershipUpdate,
     ProjectCreate,
     ProjectRead,
     ProjectUpdate,
@@ -29,6 +39,8 @@ from taskforge.models import (
     UserLogin,
     UserRead,
     UserRegister,
+    WorkspaceCreate,
+    WorkspaceRead,
 )
 from taskforge.repositories import PostgresStore
 from taskforge.services import TaskForgeService
@@ -76,8 +88,31 @@ def get_auth_service(request: Request) -> Generator[AuthService]:
             raise
 
 
+def get_authorization_service(request: Request) -> Generator[AuthorizationService]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "authorization_unavailable",
+            "Authorization requires PostgreSQL storage",
+        )
+
+    with session_factory() as session:
+        service = AuthorizationService(AuthorizationRepository(session))
+        try:
+            yield service
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+
 ServiceDep = Annotated[TaskForgeService, Depends(get_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+AuthorizationServiceDep = Annotated[
+    AuthorizationService,
+    Depends(get_authorization_service),
+]
 
 
 def api_error(status_code: int, code: str, message: str) -> HTTPException:
@@ -88,8 +123,18 @@ def api_error(status_code: int, code: str, message: str) -> HTTPException:
 
 
 def map_service_error(error: TaskForgeError) -> HTTPException:
-    if isinstance(error, ProjectNotFoundError | TaskNotFoundError):
+    if isinstance(
+        error,
+        ProjectNotFoundError
+        | TaskNotFoundError
+        | UserNotFoundError
+        | WorkspaceNotFoundError,
+    ):
         return api_error(status.HTTP_404_NOT_FOUND, error.code, error.message)
+    if isinstance(error, DuplicateMembershipError | LastOwnerError):
+        return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
+    if isinstance(error, PermissionDeniedError):
+        return api_error(status.HTTP_403_FORBIDDEN, error.code, error.message)
     if isinstance(error, InvalidStateTransitionError):
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     return api_error(status.HTTP_500_INTERNAL_SERVER_ERROR, error.code, error.message)
@@ -154,6 +199,28 @@ def require_csrf_for_cookie_auth(request: Request) -> None:
 CsrfDep = Annotated[None, Depends(require_csrf_for_cookie_auth)]
 
 
+def get_current_user(request: Request) -> Generator[UserRead]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        raise map_auth_error(UnauthenticatedError()) from None
+
+    settings = request.app.state.settings
+    session_token = request.cookies.get(settings.session_cookie_name)
+
+    with session_factory() as session:
+        auth = AuthService(
+            AuthRepository(session),
+            session_ttl=timedelta(minutes=settings.session_ttl_minutes),
+        )
+        try:
+            yield auth.current_user(session_token)
+        except AuthError as exc:
+            raise map_auth_error(exc) from exc
+
+
+CurrentUserDep = Annotated[UserRead, Depends(get_current_user)]
+
+
 @router.post(
     "/auth/register",
     response_model=UserRead,
@@ -201,6 +268,328 @@ def read_current_user(request: Request, auth: AuthServiceDep) -> UserRead:
         return auth.current_user(request.cookies.get(settings.session_cookie_name))
     except AuthError as exc:
         raise map_auth_error(exc) from exc
+
+
+@router.post(
+    "/workspaces",
+    response_model=WorkspaceRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workspace(
+    payload: WorkspaceCreate,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> WorkspaceRead:
+    return authorization.create_workspace(current_user, payload)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/memberships",
+    response_model=MembershipRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_membership(
+    workspace_id: UUID,
+    payload: MembershipCreate,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> MembershipRead:
+    try:
+        return authorization.create_membership(current_user, workspace_id, payload)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.get(
+    "/workspaces/{workspace_id}/memberships",
+    response_model=list[MembershipRead],
+)
+def list_memberships(
+    workspace_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+) -> list[MembershipRead]:
+    try:
+        return authorization.list_memberships(current_user, workspace_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/memberships/{membership_id}",
+    response_model=MembershipRead,
+)
+def update_membership(
+    workspace_id: UUID,
+    membership_id: UUID,
+    payload: MembershipUpdate,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> MembershipRead:
+    try:
+        return authorization.update_membership(
+            current_user,
+            workspace_id,
+            membership_id,
+            payload,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/memberships/{membership_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_membership(
+    workspace_id: UUID,
+    membership_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> Response:
+    try:
+        authorization.delete_membership(current_user, workspace_id, membership_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/projects",
+    response_model=ProjectRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workspace_project(
+    workspace_id: UUID,
+    payload: ProjectCreate,
+    response: Response,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> ProjectRead:
+    try:
+        project = authorization.create_workspace_project(
+            current_user,
+            workspace_id,
+            payload,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    response.headers["Location"] = (
+        f"/api/v1/workspaces/{workspace_id}/projects/{project.id}"
+    )
+    return project
+
+
+@router.get(
+    "/workspaces/{workspace_id}/projects",
+    response_model=list[ProjectRead],
+)
+def list_workspace_projects(
+    workspace_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    page_size: PageSize = 20,
+) -> list[ProjectRead]:
+    try:
+        return authorization.list_workspace_projects(
+            current_user,
+            workspace_id,
+            page_size,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.get(
+    "/workspaces/{workspace_id}/projects/{project_id}",
+    response_model=ProjectRead,
+)
+def get_workspace_project(
+    workspace_id: UUID,
+    project_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+) -> ProjectRead:
+    try:
+        return authorization.get_workspace_project(
+            current_user,
+            workspace_id,
+            project_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/projects/{project_id}",
+    response_model=ProjectRead,
+)
+def update_workspace_project(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: ProjectUpdate,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> ProjectRead:
+    try:
+        return authorization.update_workspace_project(
+            current_user,
+            workspace_id,
+            project_id,
+            payload,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_workspace_project(
+    workspace_id: UUID,
+    project_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> Response:
+    try:
+        authorization.delete_workspace_project(
+            current_user,
+            workspace_id,
+            project_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workspace_task(
+    workspace_id: UUID,
+    project_id: UUID,
+    payload: TaskCreate,
+    response: Response,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> TaskRead:
+    try:
+        task = authorization.create_workspace_task(
+            current_user,
+            workspace_id,
+            project_id,
+            payload,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    response.headers["Location"] = (
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks/{task.id}"
+    )
+    return task
+
+
+@router.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks",
+    response_model=list[TaskRead],
+)
+def list_workspace_tasks(
+    workspace_id: UUID,
+    project_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    page_size: PageSize = 20,
+) -> list[TaskRead]:
+    try:
+        return authorization.list_workspace_tasks(
+            current_user,
+            workspace_id,
+            project_id,
+            page_size,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks/{task_id}",
+    response_model=TaskRead,
+)
+def get_workspace_task(
+    workspace_id: UUID,
+    project_id: UUID,
+    task_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+) -> TaskRead:
+    try:
+        return authorization.get_workspace_task(
+            current_user,
+            workspace_id,
+            project_id,
+            task_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks/{task_id}",
+    response_model=TaskRead,
+)
+def update_workspace_task(
+    workspace_id: UUID,
+    project_id: UUID,
+    task_id: UUID,
+    payload: TaskUpdate,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> TaskRead:
+    try:
+        return authorization.update_workspace_task(
+            current_user,
+            workspace_id,
+            project_id,
+            task_id,
+            payload,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/projects/{project_id}/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_workspace_task(
+    workspace_id: UUID,
+    project_id: UUID,
+    task_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    _csrf: CsrfDep,
+) -> Response:
+    try:
+        authorization.delete_workspace_task(
+            current_user,
+            workspace_id,
+            project_id,
+            task_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -54,3 +54,16 @@
 - Trade-offs and consequences: Every authenticated request needs a database lookup until caching is deliberately introduced. Local HTTP uses a documented non-Secure-cookie exception; production HTTPS must enable Secure cookies. CSRF protection is required because browsers attach cookies automatically.
 - Evidence: Day 8 tests cover wrong credentials, `/me`, expired sessions, logout revocation, new token issuance on login, CSRF rejection/acceptance, and Secure cookie configuration.
 - Revisit trigger: Revisit if TaskForge integrates an external identity provider, needs stateless edge verification, or adds a cache with a documented session freshness/revocation policy.
+
+## ADR-006: Enforce tenant-scoped object authorization in repository lookups
+- Date and module: 2026-09-14, Day 9 / W2.2
+- Status: Accepted
+- Context / constraints: Authenticated users can belong to different workspaces. Project and task IDs are guessable enough that every object lookup must prove the current user has membership in the object's workspace.
+- Alternatives considered: Fetch objects by ID first and then check membership; return `403` for every unauthorized object; use tenant-scoped SQL lookups that return no row outside the user's workspace boundary.
+- Decision: Workspace-scoped project and task lookups join or check memberships as part of the repository path. Task lookups also verify the supplied parent project. Membership mutations verify the actor role and preserve at least one owner. Cross-tenant, wrong-parent, or nonexistent objects return `404`. In-tenant role denials, such as a member deleting a project, return `403`.
+- Reason: Returning `404` outside the tenant boundary avoids leaking object existence. Returning `403` inside the tenant boundary gives a legitimate workspace member an accurate permission failure.
+- Trade-offs and consequences: Repository methods need explicit user/workspace/object parameters instead of generic `get_project(project_id)` calls. Tests must cover outsider invisibility and same-tenant role denial separately.
+- Evidence: `tests/test_authorization.py` covers owner project and task read/update/delete, outsider `404` for project/task access, member `403` for project delete, membership add/list/update/delete role behavior, duplicate membership `409`, last-owner `409`, and foreign task under own project returning `404`. Full pytest passed with 75 tests.
+- Revisit trigger: Revisit when membership-management endpoints, task authorization, or a dedicated policy abstraction is introduced.
+
+

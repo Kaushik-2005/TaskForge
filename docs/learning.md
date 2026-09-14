@@ -381,3 +381,38 @@ Learner correctly explained authentication versus authorization and why password
 
 #### Interview explanation
 TaskForge uses opaque server-side sessions instead of self-contained JWTs for the first auth implementation. On registration, the password is hashed with a maintained password hashing library before storage. On login, the service normalizes the email, verifies the submitted password against the stored hash, creates fresh high-entropy session and CSRF tokens, stores only their hashes in PostgreSQL, and sends the raw session token in an HttpOnly SameSite=Lax cookie. `/me` looks up a valid, unexpired, unrevoked session. Logout revokes the server-side session and clears the browser cookie. Because browsers attach cookies automatically, unsafe cookie-authenticated mutations require the matching CSRF token in `X-CSRF-Token`.
+
+### Day 9 - W2.2: Authorization and tenant isolation
+#### Concept and why it exists
+Authorization decides what an authenticated user may do. TaskForge must enforce membership and role checks on every workspace, project, and task data path so one tenant cannot read or mutate another tenant's data.
+
+#### Mental model and small example
+Authentication answers: who is this requester? Authorization answers: can this requester perform this operation on this object?
+
+For object-level access, the lookup must prove both the object relationship and the user's membership:
+
+```sql
+SELECT p.*
+FROM projects p
+JOIN memberships m
+  ON m.workspace_id = p.workspace_id
+WHERE p.id = :project_id
+  AND m.user_id = :current_user_id;
+```
+
+If no row is returned, the project is either absent or outside the user's tenant boundary.
+
+#### Boundaries, failure modes, and common mistakes
+Outside the user's accessible tenant boundary should behave as not found so object existence is not leaked across tenants. Inside the user's accessible workspace, a role failure should return forbidden.
+
+Rule: outside accessible workspace -> `404`; inside accessible workspace but role lacks permission -> `403`.
+
+Nested routes must verify the parent-child relationship, not just authenticate the user or check the parent in isolation.
+
+#### Exercise and validation observations
+Learner wrote a permission matrix with owner/admin/member/outsider roles. Corrections: creating a workspace is not a workspace-role permission because the workspace does not exist yet; any authenticated user can create their own workspace and become owner. Admin member removal should be constrained to lower-privilege members and must not remove an owner or last owner.
+
+Learner correctly identified two nested-route attack cases: swapping both `project_id` and `task_id` from another workspace, and keeping an accessible project ID while swapping in a task ID from another workspace. Correct behavior is `404`, with lookups enforcing `task.id`, `task.project_id`, and project workspace membership together.
+
+#### My questions, corrections, and revision items
+Continue reinforcing the difference between cross-tenant invisibility (`404`) and in-tenant role denial (`403`). Build must remove the default-workspace bridge from authenticated project/task operations.

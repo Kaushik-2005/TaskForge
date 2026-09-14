@@ -164,3 +164,36 @@
 - Weak areas / incomplete work: Project/task authorization and tenant isolation are not implemented; authentication alone does not prevent cross-user data access.
 - Exact next action: Start Day 9 / W2.2 by writing an owner/admin/member/outsider permission matrix and then scoping project/task data paths to authenticated workspace membership.
 - Current repository state / relevant uncommitted work: Week 1 and Day 8 implementation/documentation changes remain uncommitted.
+
+## 2026-09-14 - Day 9 / W2.2 - Workspace-scoped project authorization
+- Starting point: Day 9 concepts were checked, and workspace create/list/create-project authorization existed. Project item routes were not yet tenant-scoped.
+- Concepts and work covered: Object-level authorization, tenant invisibility with `404`, same-tenant role denial with `403`, and repository lookups that bind user, workspace, and project together.
+- Learner evidence: Earlier Day 9 evidence applies: learner corrected cross-tenant access to `404`, identified nested swap attacks, and separated authentication from authorization.
+- Files changed: `src/taskforge/api.py`, `src/taskforge/errors.py`, `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `tests/test_authorization.py`, `docs/tracker.md`, `docs/design.md`, `docs/decisions.md`, `docs/session-log.md`.
+- Commands run and outcomes: Focused ruff check passed. `python -m pytest -q tests\test_authorization.py` passed with `11 passed`. Repository-wide ruff check passed, format check passed, and full pytest passed with `59 passed` and two dependency warnings.
+- Problems and resolutions: A PowerShell replacement briefly wrote literal newline escapes into `src/taskforge/errors.py`; the file was immediately rewritten cleanly before validation.
+- Weak areas / incomplete work: Task routes still need tenant-scoped parent-child authorization. Membership-management endpoints are not implemented; one member-role test inserts membership directly as setup.
+- Exact next action: Add tenant-scoped task authorization tests and implementation for read/update/delete, including foreign project/task swap cases.
+- Current repository state / relevant uncommitted work: Day 9 implementation and documentation changes are uncommitted; earlier Week 1 and Day 8 work also remains uncommitted.
+
+## 2026-09-14 - Day 9 / W2.2 - Tenant-scoped task authorization
+- Starting point: Workspace-scoped project authorization was implemented and validated. Task routes still used the legacy project-only path and did not prove workspace membership or parent-child ownership.
+- Concepts and work covered: Tenant-scoped nested task lookups, parent-child checks, cross-tenant invisibility, and preserving service-level task status transition rules in the authorized path.
+- Learner evidence: Earlier Day 9 evidence applies: learner identified both task swap attacks and expected `404` when the project/task does not belong to the current user's accessible workspace path.
+- Files changed: `src/taskforge/api.py`, `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `tests/test_authorization.py`, `docs/tracker.md`, `docs/design.md`, `docs/session-log.md`.
+- Commands run and outcomes: Focused ruff check passed. `python -m pytest -q tests\test_authorization.py` passed with `18 passed`. Repository-wide ruff check passed, format check passed, and full pytest passed with `66 passed` and two dependency warnings.
+- Problems and resolutions: Test setup needed a separate existing-user login helper when switching back to a previously registered owner; added `login_existing_user`.
+- Weak areas / incomplete work: Membership-management endpoints are still missing. Legacy unauthenticated project/task routes still exist and need an explicit compatibility or removal decision.
+- Exact next action: Decide whether to implement membership-management endpoints next or reconcile the legacy unauthenticated routes with the authenticated workspace route surface.
+- Current repository state / relevant uncommitted work: Day 9 implementation and documentation changes are uncommitted; earlier Week 1 and Day 8 work also remains uncommitted.
+
+## 2026-09-14 - Day 9 / W2.2 - Membership management endpoints
+- Starting point: Workspace-scoped project and task authorization existed, but tests still needed direct database setup for membership roles and the API had no membership-management surface.
+- Concepts and work covered: Role-based membership management, duplicate membership conflicts, in-tenant forbidden actions, outsider invisibility, and last-owner protection.
+- Learner evidence: Earlier Day 9 evidence applies: learner supplied the role matrix and distinguished `404` cross-tenant invisibility from `403` in-tenant permission denial.
+- Files changed: `src/taskforge/api.py`, `src/taskforge/models.py`, `src/taskforge/errors.py`, `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `tests/test_authorization.py`, `docs/tracker.md`, `docs/design.md`, `docs/session-log.md`, `docs/decisions.md`.
+- Commands run and outcomes: Focused authorization tests passed with `27 passed`. Repository-wide ruff check passed, format check passed, and full pytest passed with `75 passed` and two dependency warnings.
+- Problems and resolutions: Tests initially reused an old CSRF token after logging the owner back in; fixed by using the fresh login result. Ruff also required import sorting in `src/taskforge/api.py`.
+- Weak areas / incomplete work: Legacy unauthenticated project/task routes still exist and need explicit compatibility, migration, or removal handling.
+- Exact next action: Decide how to handle legacy `/api/v1/projects...` routes now that authenticated workspace routes exist.
+- Current repository state / relevant uncommitted work: Day 9 implementation and documentation changes are uncommitted; earlier Week 1 and Day 8 work also remains uncommitted.

@@ -74,3 +74,37 @@ class UserRead(BaseModel):
 class AuthSessionRead(BaseModel):
     user: UserRead
     csrf_token: str
+
+
+class WorkspaceCreate(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class WorkspaceRead(BaseModel):
+    id: UUID
+    name: str
+    created_at: datetime
+
+
+class MembershipRole(StrEnum):
+    owner = "owner"
+    admin = "admin"
+    member = "member"
+
+
+class MembershipCreate(StrictModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: MembershipRole = MembershipRole.member
+
+
+class MembershipUpdate(StrictModel):
+    role: MembershipRole
+
+
+class MembershipRead(BaseModel):
+    id: UUID
+    user_id: UUID
+    workspace_id: UUID
+    email: str
+    role: MembershipRole
+    created_at: datetime
