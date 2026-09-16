@@ -243,6 +243,97 @@ def register_user(payload: UserRegister, auth: AuthServiceDep) -> UserRead:
         raise map_auth_error(exc) from exc
 
 
+def client_ip(request: Request) -> str:
+    if request.client is None:
+        return "unknown"
+    return request.client.host
+
+
+def check_login_rate_limit(request: Request, email: str) -> None:
+    limiter = request.app.state.rate_limiter
+    normalized_email = email.strip().lower()
+    key = f"rate_limit:v1:login:{client_ip(request)}:{normalized_email}"
+
+    result = limiter.check(
+        key,
+        max_requests=5,
+        window_seconds=60,
+        fail_open=False,
+    )
+
+    if result.allowed:
+        return
+
+    headers = {}
+    if result.retry_after_seconds is not None:
+        headers["Retry-After"] = str(result.retry_after_seconds)
+
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "rate_limited",
+            "message": "Too many login attempts",
+        },
+        headers=headers,
+    )
+
+
+def check_authenticated_write_rate_limit(request: Request, user: UserRead) -> None:
+    limiter = request.app.state.rate_limiter
+    key = f"rate_limit:v1:user_write:{user.id}"
+
+    result = limiter.check(
+        key,
+        max_requests=60,
+        window_seconds=60,
+        fail_open=True,
+    )
+
+    if result.allowed:
+        return
+
+    headers = {}
+    if result.retry_after_seconds is not None:
+        headers["Retry-After"] = str(result.retry_after_seconds)
+
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "rate_limited",
+            "message": "Too many write requests",
+        },
+        headers=headers,
+    )
+
+
+def check_authenticated_read_rate_limit(request: Request, user: UserRead) -> None:
+    limiter = request.app.state.rate_limiter
+    key = f"rate_limit:v1:user_read:{user.id}"
+
+    result = limiter.check(
+        key,
+        max_requests=30,
+        window_seconds=60,
+        fail_open=True,
+    )
+
+    if result.allowed:
+        return
+
+    headers = {}
+    if result.retry_after_seconds is not None:
+        headers["Retry-After"] = str(result.retry_after_seconds)
+
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "rate_limited",
+            "message": "Too many read requests",
+        },
+        headers=headers,
+    )
+
+
 @router.post("/auth/login", response_model=AuthSessionRead)
 def login_user(
     payload: UserLogin,
@@ -250,6 +341,7 @@ def login_user(
     response: Response,
     auth: AuthServiceDep,
 ) -> AuthSessionRead:
+    check_login_rate_limit(request, payload.email)
     try:
         session = auth.login(payload.email, payload.password)
     except AuthError as exc:
@@ -287,10 +379,12 @@ def read_current_user(request: Request, auth: AuthServiceDep) -> UserRead:
 )
 def create_workspace(
     payload: WorkspaceCreate,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> WorkspaceRead:
+    check_authenticated_write_rate_limit(request, current_user)
     return authorization.create_workspace(current_user, payload)
 
 
@@ -302,10 +396,12 @@ def create_workspace(
 def create_membership(
     workspace_id: UUID,
     payload: MembershipCreate,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> MembershipRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         return authorization.create_membership(current_user, workspace_id, payload)
     except TaskForgeError as exc:
@@ -335,10 +431,12 @@ def update_membership(
     workspace_id: UUID,
     membership_id: UUID,
     payload: MembershipUpdate,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> MembershipRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         return authorization.update_membership(
             current_user,
@@ -357,10 +455,12 @@ def update_membership(
 def delete_membership(
     workspace_id: UUID,
     membership_id: UUID,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> Response:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         authorization.delete_membership(current_user, workspace_id, membership_id)
     except TaskForgeError as exc:
@@ -377,10 +477,12 @@ def create_workspace_project(
     workspace_id: UUID,
     payload: ProjectCreate,
     response: Response,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> ProjectRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         project = authorization.create_workspace_project(
             current_user,
@@ -443,10 +545,12 @@ def update_workspace_project(
     workspace_id: UUID,
     project_id: UUID,
     payload: ProjectUpdate,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> ProjectRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         return authorization.update_workspace_project(
             current_user,
@@ -465,10 +569,12 @@ def update_workspace_project(
 def delete_workspace_project(
     workspace_id: UUID,
     project_id: UUID,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> Response:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         authorization.delete_workspace_project(
             current_user,
@@ -490,10 +596,12 @@ def create_workspace_task(
     project_id: UUID,
     payload: TaskCreate,
     response: Response,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> TaskRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         task = authorization.create_workspace_task(
             current_user,
@@ -516,12 +624,14 @@ def create_workspace_task(
 def list_workspace_tasks(
     workspace_id: UUID,
     project_id: UUID,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     page_size: PageSize = 20,
     after_created_at: datetime | None = None,
     after_id: UUID | None = None,
 ) -> list[TaskRead]:
+    check_authenticated_read_rate_limit(request, current_user)
     if (after_created_at is None) != (after_id is None):
         raise api_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -573,10 +683,12 @@ def update_workspace_task(
     project_id: UUID,
     task_id: UUID,
     payload: TaskUpdate,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> TaskRead:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         return authorization.update_workspace_task(
             current_user,
@@ -597,10 +709,12 @@ def delete_workspace_task(
     workspace_id: UUID,
     project_id: UUID,
     task_id: UUID,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
     _csrf: CsrfDep,
 ) -> Response:
+    check_authenticated_write_rate_limit(request, current_user)
     try:
         authorization.delete_workspace_task(
             current_user,
@@ -652,9 +766,11 @@ def list_projects(
 def get_workspace_project_summary(
     workspace_id: UUID,
     project_id: UUID,
+    request: Request,
     current_user: CurrentUserDep,
     authorization: AuthorizationServiceDep,
 ) -> ProjectSummaryRead:
+    check_authenticated_read_rate_limit(request, current_user)
     try:
         return authorization.get_workspace_project_summary(
             current_user,

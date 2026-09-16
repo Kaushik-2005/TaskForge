@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 12 / W2.5 Cache correctness
+- Day / module: Day 13 / W2.6 Security and resource limits
 - Calendar date: 2026-09-16
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Completed Day 12 cache-aside project summary implementation, validation, and documentation.
+- Exact current task: Completed Day 13 Redis-backed rate limits for login, authenticated writes, and selected expensive reads.
 - Last updated: 2026-09-16
 
 ## Day-by-day progress
@@ -25,7 +25,7 @@
 | 10 | W2.3 | 2026-09-14 | Completed | Checked | Completed |
 | 11 | W2.4 | 2026-09-14 | Completed | Checked | Completed |
 | 12 | W2.5 | 2026-09-16 | Completed | Checked | Completed |
-| 13 | W2.6 | - | Not started | Not checked | Not started |
+| 13 | W2.6 | 2026-09-16 | Completed | Checked | Completed |
 | 14 | W2.7 | - | Not started | Not checked | Not started |
 | 15 | W3.1 | - | Not started | Not checked | Not started |
 | 16 | W3.2 | - | Not started | Not checked | Not started |
@@ -43,6 +43,24 @@
 | 28 | W4.7 | - | Not started | Not checked | Not started |
 
 ## Current module evidence
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 13 used BFP 17 security/abuse concepts, BFP 01 CORS distinction, OWASP authorization context, and Redis atomic counter behavior as the source map.
+- Learner answer or concise evidence: Learner correctly explained that CORS is browser-enforced and does not stop curl/scripts; identified login, writes, and expensive reads as rate-limit targets; and explained why login is fail-closed while authenticated reads/writes are fail-open.
+- Exercise path/result: Initial policy defined and implemented: login by IP+email is 5/min fail-closed; authenticated writes by user are 60/min fail-open; selected expensive authenticated reads by user are 30/min fail-open.
+- Changed files: `src/taskforge/rate_limit.py`, `src/taskforge/main.py`, `src/taskforge/api.py`, `tests/test_rate_limit.py`, `tests/test_auth_api.py`, `tests/test_authorization.py`, and Day 13 docs.
+- Commands and actual results: `\.venv\Scripts\python.exe -m ruff check .` passed; `\.venv\Scripts\python.exe -m pytest -q tests` passed with `99 passed`, two dependency deprecation warnings.
+- Design entry / related ADRs: `docs/design.md` Day 13 entry; ADR-010 records Redis-backed rate-limit policy and fail-open/fail-closed choices.
+- Untested assumptions: No multi-process live Redis race test, trusted proxy/IP parsing policy, production load tuning, or global request body byte-size middleware yet.
+- Weak concepts: None blocking; continue reinforcing that rate limiting is not authorization and CORS is not a server-side security boundary.
+- Optional work deferred: Configurable per-route limits, proxy-aware client IP handling, rate-limit metrics, broader read-route coverage, payload byte-size limits, and login account lockout policy.
+## Last completed module evidence - Day 12
 - [x] Required selected reading completed or explained with source
 - [x] Core concept explained by learner
 - [x] Knowledge check passed
@@ -108,8 +126,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 13 / W2.6, Orient
-- File/function/section: rate limits, resource limits, payload/request bounds, and abuse-resistant API behavior
-- Next question or exercise: Explain which TaskForge operations need limits and what failure mode each limit prevents.
-- Next build task: Define the Day 13 limit policy before implementation.
-- Next validation command: .\.venv\Scripts\python.exe -m pytest -q after the Day 13 increment
+- Module and phase: Day 14 / W2.7, Orient
+- File/function/section: Week 2 correctness review; security/race/cache scenario pack
+- Next question or exercise: Answer five review questions covering identity, permissions, transactions, indexes, caching, and rate limits.
+- Next build task: Build or verify the Day 14 scenario pack: expired session, swapped workspace IDs, stale version, DB rollback, Redis outage, oversized input, and rate-limit behavior.
+- Next validation command: `\.venv\Scripts\python.exe -m ruff check .` and `\.venv\Scripts\python.exe -m pytest -q tests`

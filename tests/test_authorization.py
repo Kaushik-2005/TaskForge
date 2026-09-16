@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, text
 
 from taskforge.config import Settings
 from taskforge.main import create_app
+from taskforge.rate_limit import RateLimitResult
 
 
 @dataclass
@@ -38,6 +39,21 @@ class FakeProjectSummaryCache:
     def delete_key(self, key: str) -> None:
         self.delete_calls.append(key)
         self.values.pop(key, None)
+
+
+class BlockingReadRateLimiter:
+    def check(
+        self,
+        key: str,
+        *,
+        max_requests: int,
+        window_seconds: int,
+        fail_open: bool,
+    ) -> RateLimitResult:
+        return RateLimitResult(
+            allowed=False,
+            retry_after_seconds=window_seconds,
+        )
 
 
 def make_settings(url: str) -> Settings:
@@ -856,3 +872,23 @@ def test_workspace_task_stale_version_returns_conflict(
     assert first.json()["version"] == task["version"] + 1
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "stale_task_version"
+
+
+def test_workspace_project_summary_read_rate_limit_returns_429(
+    migrated_database_url: str,
+) -> None:
+    app = create_app(make_settings(migrated_database_url))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        app.state.rate_limiter = BlockingReadRateLimiter()
+
+        blocked = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "60"
+    assert blocked.json()["error"]["code"] == "rate_limited"

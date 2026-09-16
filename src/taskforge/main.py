@@ -16,6 +16,7 @@ from taskforge.api import router
 from taskforge.cache import RedisProjectSummaryCache
 from taskforge.config import Settings, get_settings
 from taskforge.db import create_db_engine, create_session_factory
+from taskforge.rate_limit import NullRateLimiter, RedisRateLimiter
 from taskforge.services import TaskForgeService
 from taskforge.store import InMemoryStore
 
@@ -55,6 +56,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redis_client,
         settings.project_summary_cache_ttl_seconds,
     )
+    if settings.environment == "test":
+        app.state.rate_limiter = NullRateLimiter()
+    else:
+        app.state.rate_limiter = RedisRateLimiter(redis_client)
 
     if settings.storage_backend == "postgres":
         engine = create_db_engine(settings)
@@ -99,7 +104,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             error = detail
         else:
             error = {"code": "http_error", "message": str(detail)}
-        return JSONResponse(status_code=exc.status_code, content={"error": error})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": error},
+            headers=getattr(exc, "headers", None),
+        )
 
     @app.exception_handler(RequestValidationError)
     def validation_exception_handler(
