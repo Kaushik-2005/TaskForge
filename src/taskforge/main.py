@@ -9,9 +9,11 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from redis import Redis
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from taskforge.api import router
+from taskforge.cache import RedisProjectSummaryCache
 from taskforge.config import Settings, get_settings
 from taskforge.db import create_db_engine, create_session_factory
 from taskforge.services import TaskForgeService
@@ -35,9 +37,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = getattr(app.state, "engine", None)
         if engine is not None:
             engine.dispose()
+        redis_client = getattr(app.state, "redis_client", None)
+        if redis_client is not None:
+            redis_client.close()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
+
+    redis_client = Redis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=settings.redis_timeout_seconds,
+        socket_timeout=settings.redis_timeout_seconds,
+        decode_responses=True,
+    )
+    app.state.redis_client = redis_client
+    app.state.project_summary_cache = RedisProjectSummaryCache(
+        redis_client,
+        settings.project_summary_cache_ttl_seconds,
+    )
+
     if settings.storage_backend == "postgres":
         engine = create_db_engine(settings)
         app.state.engine = engine

@@ -15,6 +15,31 @@ class LoggedInUser:
     csrf_token: str
 
 
+class FakeProjectSummaryCache:
+    def __init__(self) -> None:
+        self.values: dict[str, object] = {}
+        self.get_calls: list[str] = []
+        self.set_calls: list[str] = []
+        self.delete_calls: list[str] = []
+
+    def key(self, workspace_id: str, project_id: str) -> str:
+        return f"taskforge:v1:workspace:{workspace_id}:project:{project_id}:summary"
+
+    def get(self, workspace_id: str, project_id: str) -> object | None:
+        key = self.key(workspace_id, project_id)
+        self.get_calls.append(key)
+        return self.values.get(key)
+
+    def set(self, summary: object) -> None:
+        key = self.key(summary.workspace_id, summary.id)
+        self.set_calls.append(key)
+        self.values[key] = summary
+
+    def delete_key(self, key: str) -> None:
+        self.delete_calls.append(key)
+        self.values.pop(key, None)
+
+
 def make_settings(url: str) -> Settings:
     return Settings(
         environment="test",
@@ -24,6 +49,12 @@ def make_settings(url: str) -> Settings:
         database_max_overflow=0,
         database_pool_timeout_seconds=2,
     )
+
+
+def make_cached_app(url: str, cache: FakeProjectSummaryCache):
+    app = create_app(make_settings(url))
+    app.state.project_summary_cache = cache
+    return app
 
 
 def register_and_login(client: TestClient, email: str) -> LoggedInUser:
@@ -366,6 +397,142 @@ def test_owner_can_read_workspace_task(
 
     assert response.status_code == 200
     assert response.json()["title"] == "Draft checklist"
+
+
+def test_owner_can_read_workspace_project_summary(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        create_workspace_task(client, workspace_id, project["id"], owner)
+        create_workspace_task(
+            client, workspace_id, project["id"], owner, title="Review notes"
+        )
+
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "id": project["id"],
+            "workspace_id": workspace_id,
+            "name": "Launch plan",
+            "task_count": 2,
+        }
+
+
+def test_workspace_project_summary_counts_zero_tasks(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(
+            client, workspace_id, owner, name="Empty project"
+        )
+
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["task_count"] == 0
+
+
+def test_outsider_cannot_read_workspace_project_summary(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        register_and_login(client, "outsider@example.com")
+
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    assert response.status_code == 404
+
+
+def test_workspace_project_summary_cache_miss_then_hit(
+    migrated_database_url: str,
+) -> None:
+    cache = FakeProjectSummaryCache()
+
+    with TestClient(make_cached_app(migrated_database_url, cache)) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        create_workspace_task(client, workspace_id, project["id"], owner)
+
+        first = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+        second = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert len(cache.get_calls) == 2
+    assert len(cache.set_calls) == 1
+
+
+def test_workspace_project_summary_cache_invalidates_after_task_create(
+    migrated_database_url: str,
+) -> None:
+    cache = FakeProjectSummaryCache()
+
+    with TestClient(make_cached_app(migrated_database_url, cache)) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+
+        before = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+        create_workspace_task(client, workspace_id, project["id"], owner)
+        after = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    expected_key = (
+        f"taskforge:v1:workspace:{workspace_id}:project:{project['id']}:summary"
+    )
+
+    assert before.status_code == 200
+    assert before.json()["task_count"] == 0
+    assert after.status_code == 200
+    assert after.json()["task_count"] == 1
+    assert expected_key in cache.delete_calls
+
+
+def test_outsider_cannot_read_cached_workspace_project_summary(
+    migrated_database_url: str,
+) -> None:
+    cache = FakeProjectSummaryCache()
+
+    with TestClient(make_cached_app(migrated_database_url, cache)) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+
+        owner_read = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+        register_and_login(client, "outsider@example.com")
+        outsider_read = client.get(
+            f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/summary"
+        )
+
+    assert owner_read.status_code == 200
+    assert outsider_read.status_code == 404
+    assert len(cache.set_calls) == 1
 
 
 def test_owner_can_update_workspace_task(

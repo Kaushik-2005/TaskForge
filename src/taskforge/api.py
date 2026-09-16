@@ -9,6 +9,7 @@ from taskforge.auth_repository import AuthRepository
 from taskforge.auth_service import AuthService
 from taskforge.authorization_repository import AuthorizationRepository
 from taskforge.authorization_service import AuthorizationService
+from taskforge.cache import run_after_commit_cache_deletes
 from taskforge.errors import (
     AuthError,
     CsrfError,
@@ -33,6 +34,7 @@ from taskforge.models import (
     MembershipUpdate,
     ProjectCreate,
     ProjectRead,
+    ProjectSummaryRead,
     ProjectUpdate,
     TaskCreate,
     TaskRead,
@@ -99,10 +101,17 @@ def get_authorization_service(request: Request) -> Generator[AuthorizationServic
         )
 
     with session_factory() as session:
-        service = AuthorizationService(AuthorizationRepository(session))
+        project_summary_cache = getattr(
+            request.app.state, "project_summary_cache", None
+        )
+        service = AuthorizationService(
+            AuthorizationRepository(session),
+            project_summary_cache,
+        )
         try:
             yield service
             session.commit()
+            run_after_commit_cache_deletes(session)
         except Exception:
             session.rollback()
             raise
@@ -634,6 +643,26 @@ def list_projects(
         page_size,
         name_contains=name_contains,
     )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/projects/{project_id}/summary",
+    response_model=ProjectSummaryRead,
+)
+def get_workspace_project_summary(
+    workspace_id: UUID,
+    project_id: UUID,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+) -> ProjectSummaryRead:
+    try:
+        return authorization.get_workspace_project_summary(
+            current_user,
+            workspace_id,
+            project_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.get("/projects/{project_id}", response_model=ProjectRead)

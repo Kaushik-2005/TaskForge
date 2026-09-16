@@ -24,6 +24,7 @@ from taskforge.models import (
     MembershipUpdate,
     ProjectCreate,
     ProjectRead,
+    ProjectSummaryRead,
     ProjectUpdate,
     TaskCreate,
     TaskRead,
@@ -211,6 +212,39 @@ class AuthorizationRepository:
             return None
         return self._project_read(row)
 
+    def get_workspace_project_summary_for_user(
+        self,
+        user_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> ProjectSummaryRead | None:
+        row = self.session.execute(
+            select(
+                ProjectRow.id,
+                ProjectRow.workspace_id,
+                ProjectRow.name,
+                func.count(TaskRow.id).label("task_count"),
+            )
+            .join(MembershipRow, MembershipRow.workspace_id == ProjectRow.workspace_id)
+            .outerjoin(TaskRow, TaskRow.project_id == ProjectRow.id)
+            .where(
+                ProjectRow.id == project_id,
+                ProjectRow.workspace_id == workspace_id,
+                MembershipRow.user_id == user_id,
+            )
+            .group_by(ProjectRow.id, ProjectRow.workspace_id, ProjectRow.name)
+        ).one_or_none()
+
+        if row is None:
+            return None
+
+        return ProjectSummaryRead(
+            id=row.id,
+            workspace_id=row.workspace_id,
+            name=row.name,
+            task_count=row.task_count,
+        )
+
     def update_workspace_project_for_user(
         self,
         user_id: UUID,
@@ -371,6 +405,16 @@ class AuthorizationRepository:
 
     def user_has_workspace_membership(self, user_id: UUID, workspace_id: UUID) -> bool:
         return self.workspace_role_for_user(user_id, workspace_id) is not None
+
+    def user_can_access_workspace_project(
+        self,
+        user_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> bool:
+        return (
+            self._accessible_project_row(user_id, workspace_id, project_id) is not None
+        )
 
     def workspace_role_for_user(self, user_id: UUID, workspace_id: UUID) -> str | None:
         return self.session.scalar(

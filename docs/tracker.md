@@ -3,12 +3,12 @@
 ## Current position
 - Roadmap: roadmap.md
 - Day / module: Day 12 / W2.5 Cache correctness
-- Calendar date: 2026-09-14
-- Phase: Orient
-- Status: Not Started
+- Calendar date: 2026-09-16
+- Phase: Review
+- Status: Completed
 - Mode: Guided Learning
-- Exact current task: Start Day 12 by learning cache-aside behavior, TTL, invalidation, and freshness trade-offs.
-- Last updated: 2026-09-14
+- Exact current task: Completed Day 12 cache-aside project summary implementation, validation, and documentation.
+- Last updated: 2026-09-16
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -24,7 +24,7 @@
 | 9 | W2.2 | 2026-09-13 to 2026-09-14 | Completed | Checked | Completed |
 | 10 | W2.3 | 2026-09-14 | Completed | Checked | Completed |
 | 11 | W2.4 | 2026-09-14 | Completed | Checked | Completed |
-| 12 | W2.5 | - | Not started | Not checked | Not started |
+| 12 | W2.5 | 2026-09-16 | Completed | Checked | Completed |
 | 13 | W2.6 | - | Not started | Not checked | Not started |
 | 14 | W2.7 | - | Not started | Not checked | Not started |
 | 15 | W3.1 | - | Not started | Not checked | Not started |
@@ -43,23 +43,23 @@
 | 28 | W4.7 | - | Not started | Not checked | Not started |
 
 ## Current module evidence
-- [ ] Required selected reading completed or explained with source
-- [ ] Core concept explained by learner
-- [ ] Knowledge check passed
-- [ ] Exercise attempted and reviewed
-- [ ] Required project increment or design/lab completed
-- [ ] Relevant validation executed
-- [ ] Notes and corrections saved
-- [ ] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 12 will use BFP 09 and Redis cache-aside documentation.
-- Learner answer or concise evidence: Pending Day 12 cache-correctness explanation.
-- Exercise path/result: Pending stale-fill/invalidation exercise.
-- Changed files: Pending Day 12.
-- Commands and actual results: Pending Day 12.
-- Design entry / related ADRs: Pending Day 12 cache policy/design entry.
-- Untested assumptions: Need to define cache freshness and outage behavior before implementation.
-- Weak concepts: Cache invalidation, TTL, stale data windows, and outage policy are not checked yet.
-- Optional work deferred: None yet.
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 12 used BFP 09 cache concepts and Redis cache-aside behavior as the source map; implementation notes focused on cache-aside, TTL, invalidation, tenant-scoped keys, and Redis outage behavior.
+- Learner answer or concise evidence: Learner explained the stale-fill race, why TTL and invalidation solve different failure modes, why cache keys must include `workspace_id`, and why Redis is a disposable optimization while PostgreSQL remains authoritative.
+- Exercise path/result: Stale-fill and invalidation exercise completed; TaskForge now uses a 30-second TTL plus post-commit invalidation for project summaries.
+- Changed files: `pyproject.toml`, `compose.yaml`, `src/taskforge/cache.py`, `src/taskforge/config.py`, `src/taskforge/main.py`, `src/taskforge/api.py`, `src/taskforge/models.py`, `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `tests/test_cache.py`, `tests/test_authorization.py`, and Day 12 docs.
+- Commands and actual results: Focused `pytest` for cache and authorization passed with `39 passed`; `ruff check .` passed; learner reported full tests and format checks passed; manual `docker compose exec redis redis-cli ping` returned `PONG`.
+- Design entry / related ADRs: `docs/design.md` Day 12 entry; ADR-009 records the cache-aside Redis project summary decision.
+- Untested assumptions: No high-concurrency stale-fill race test, cache stampede test, hot-key load test, or production Redis outage-duration test was run.
+- Weak concepts: None blocking; stale-fill is understood as a bounded freshness limitation rather than a fully eliminated race.
+- Optional work deferred: Stampede protection, opaque cache version bump strategy, Redis readiness checks, and broader cached read models.
 
 ## Last completed module evidence - Day 11 / W2.4
 - [x] Required selected reading completed or explained with source
@@ -108,8 +108,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 12 / W2.5, Orient
-- File/function/section: cache-aside design, project summary read path, Redis configuration
-- Next question or exercise: Explain how a concurrent read can repopulate stale cache data after invalidation.
-- Next build task: Define cache key shape, freshness policy, invalidation point, and Redis outage behavior before implementation.
-- Next validation command: `.\.venv\Scripts\python.exe -m pytest -q` plus focused cache tests once implemented
+- Module and phase: Day 13 / W2.6, Orient
+- File/function/section: rate limits, resource limits, payload/request bounds, and abuse-resistant API behavior
+- Next question or exercise: Explain which TaskForge operations need limits and what failure mode each limit prevents.
+- Next build task: Define the Day 13 limit policy before implementation.
+- Next validation command: .\.venv\Scripts\python.exe -m pytest -q after the Day 13 increment

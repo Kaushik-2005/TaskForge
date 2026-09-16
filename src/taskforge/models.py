@@ -29,6 +29,13 @@ class ProjectRead(BaseModel):
     created_at: datetime
 
 
+class ProjectSummaryRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    name: str
+    task_count: int
+
+
 class TaskCreate(StrictModel):
     title: str = Field(min_length=1, max_length=200)
     status: TaskStatus = TaskStatus.todo

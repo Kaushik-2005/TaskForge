@@ -2,6 +2,11 @@ from datetime import datetime
 from uuid import UUID
 
 from taskforge.authorization_repository import AuthorizationRepository
+from taskforge.cache import (
+    NullProjectSummaryCache,
+    ProjectSummaryCache,
+    schedule_after_commit_cache_delete,
+)
 from taskforge.errors import (
     InvalidStateTransitionError,
     PermissionDeniedError,
@@ -15,6 +20,7 @@ from taskforge.models import (
     MembershipUpdate,
     ProjectCreate,
     ProjectRead,
+    ProjectSummaryRead,
     ProjectUpdate,
     TaskCreate,
     TaskRead,
@@ -27,8 +33,13 @@ from taskforge.models import (
 
 
 class AuthorizationService:
-    def __init__(self, repository: AuthorizationRepository) -> None:
+    def __init__(
+        self,
+        repository: AuthorizationRepository,
+        project_summary_cache: ProjectSummaryCache | None = None,
+    ) -> None:
         self.repository = repository
+        self.project_summary_cache = project_summary_cache or NullProjectSummaryCache()
 
     def create_workspace(
         self,
@@ -146,6 +157,45 @@ class AuthorizationService:
             raise WorkspaceNotFoundError
         return project
 
+    def get_workspace_project_summary(
+        self,
+        current_user: UserRead,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> ProjectSummaryRead:
+        if not self.repository.user_can_access_workspace_project(
+            current_user.id,
+            workspace_id,
+            project_id,
+        ):
+            raise WorkspaceNotFoundError
+
+        cached = self.project_summary_cache.get(workspace_id, project_id)
+        if cached is not None:
+            return cached
+
+        summary = self.repository.get_workspace_project_summary_for_user(
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+        if summary is None:
+            raise WorkspaceNotFoundError
+
+        self.project_summary_cache.set(summary)
+        return summary
+
+    def _invalidate_project_summary_after_commit(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> None:
+        schedule_after_commit_cache_delete(
+            self.repository.session,
+            self.project_summary_cache,
+            self.project_summary_cache.key(workspace_id, project_id),
+        )
+
     def update_workspace_project(
         self,
         current_user: UserRead,
@@ -178,6 +228,7 @@ class AuthorizationService:
             raise WorkspaceNotFoundError
         if deleted is False:
             raise PermissionDeniedError
+        self._invalidate_project_summary_after_commit(workspace_id, project_id)
 
     def create_workspace_task(
         self,
@@ -194,6 +245,7 @@ class AuthorizationService:
         )
         if task is None:
             raise WorkspaceNotFoundError
+        self._invalidate_project_summary_after_commit(workspace_id, project_id)
         return task
 
     def list_workspace_tasks(
@@ -271,3 +323,4 @@ class AuthorizationService:
             task_id=task_id,
         ):
             raise TaskNotFoundError
+        self._invalidate_project_summary_after_commit(workspace_id, project_id)

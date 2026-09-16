@@ -8,3 +8,6 @@ build/
 dist/
 .env
 .dist/
+docs/*
+!docs/design.md
+!docs/tracker.md

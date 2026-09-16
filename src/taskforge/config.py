@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     session_cookie_name: str = Field(default="taskforge_session", min_length=1)
     csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
     session_cookie_secure: bool = False
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_timeout_seconds: float = Field(default=0.2, gt=0, le=5)
+    project_summary_cache_ttl_seconds: int = Field(default=30, ge=1, le=3600)
 
     model_config = SettingsConfigDict(
         env_file=".env",
