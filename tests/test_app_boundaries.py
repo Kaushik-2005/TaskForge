@@ -66,3 +66,28 @@ def test_access_log_is_structured_and_omits_body(
     assert record["path"] == "/api/v1/projects"
     assert record["status_code"] == 201
     assert "Launch plan" not in caplog.text
+
+
+def test_oversized_request_body_is_rejected() -> None:
+    client = TestClient(
+        create_app(
+            Settings(
+                environment="test",
+                storage_backend="memory",
+                max_request_body_bytes=20,
+            )
+        )
+    )
+
+    response = client.post(
+        "/api/v1/projects",
+        json={"name": "This body is definitely too large"},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "error": {
+            "code": "request_body_too_large",
+            "message": "Request body is too large",
+        }
+    }

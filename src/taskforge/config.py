@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_timeout_seconds: float = Field(default=0.2, gt=0, le=5)
     project_summary_cache_ttl_seconds: int = Field(default=30, ge=1, le=3600)
+    max_request_body_bytes: int = Field(default=1_000_000, ge=1)
 
     model_config = SettingsConfigDict(
         env_file=".env",

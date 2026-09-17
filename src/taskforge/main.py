@@ -70,6 +70,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.service = TaskForgeService(app.state.store)
 
     @app.middleware("http")
+    async def limit_request_body_middleware(
+        request: Request,
+        call_next: Callable[[Request], Response],
+    ) -> Response:
+        content_length = request.headers.get("content-length")
+        if (
+            content_length is not None
+            and int(content_length) > settings.max_request_body_bytes
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                content={
+                    "error": {
+                        "code": "request_body_too_large",
+                        "message": "Request body is too large",
+                    }
+                },
+            )
+
+        return await call_next(request)
+
+    @app.middleware("http")
     async def request_context_middleware(
         request: Request,
         call_next: Callable[[Request], Response],

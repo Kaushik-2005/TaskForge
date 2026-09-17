@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 13 / W2.6 Security and resource limits
-- Calendar date: 2026-09-16
+- Day / module: Day 14 / W2.7 Correctness review
+- Calendar date: 2026-09-17
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Completed Day 13 Redis-backed rate limits for login, authenticated writes, and selected expensive reads.
-- Last updated: 2026-09-16
+- Exact current task: Completed Day 14 correctness review, scenario-pack evidence, threat model, cache policy, query-plan report, and full validation.
+- Last updated: 2026-09-17
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -26,7 +26,7 @@
 | 11 | W2.4 | 2026-09-14 | Completed | Checked | Completed |
 | 12 | W2.5 | 2026-09-16 | Completed | Checked | Completed |
 | 13 | W2.6 | 2026-09-16 | Completed | Checked | Completed |
-| 14 | W2.7 | - | Not started | Not checked | Not started |
+| 14 | W2.7 | 2026-09-17 | Completed | Checked | Completed |
 | 15 | W3.1 | - | Not started | Not checked | Not started |
 | 16 | W3.2 | - | Not started | Not checked | Not started |
 | 17 | W3.3 | - | Not started | Not checked | Not started |
@@ -43,6 +43,25 @@
 | 28 | W4.7 | - | Not started | Not checked | Not started |
 
 ## Current module evidence
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 14 correctness review covers identity, permissions, transactions, indexing, caching, and resource-limit failure modes from Week 2.
+- Learner answer or concise evidence: Learner correctly explained session state location, expired/revoked session behavior, tenant-scoped nested task lookup, optimistic concurrency via expected_version, authorize-before-cache, and route-specific Redis outage policy.
+- Exercise path/result: Existing tests map to expired session, swapped workspace/task IDs, stale version, DB rollback, Redis outage, and cached authorization. Added minimal oversized-input protection using a Content-Length request body limit and a 413 test. Added review deliverables: `docs/week2-correctness-review.md`, `docs/threat-model.md`, and `docs/cache-policy.md`.
+- Changed files: `src/taskforge/config.py`, `src/taskforge/main.py`, `tests/test_app_boundaries.py`, `docs/week2-correctness-review.md`, `docs/threat-model.md`, `docs/cache-policy.md`, `docs/learning.md`, `docs/session-log.md`, `docs/design.md`, and `docs/tracker.md`.
+- Commands and actual results: Focused validation passed with `15 passed`; full gate passed: `\.venv\Scripts\python.exe -m ruff check .`, `\.venv\Scripts\python.exe -m ruff format --check .` with 41 files already formatted, and `\.venv\Scripts\python.exe -m pytest -q tests` with `100 passed`, two dependency deprecation warnings.
+- Design entry / related ADRs: `docs/design.md` Day 14 entry; relevant existing ADRs are ADR-005 through ADR-010.
+- Untested assumptions: The new request body guard only rejects requests that include `Content-Length`; streaming/chunked bodies without that header are not bounded yet. Query-plan report uses Day 11 measured evidence rather than a fresh Day 14 run.
+- Weak concepts: None blocking; continue reinforcing that cached state and rate limits are not authorization.
+- Optional work deferred: Streaming body limit without `Content-Length`, trusted proxy/IP policy, rate-limit telemetry, cache stampede protection, production load testing, and broader route reconciliation.
+
+## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source
 - [x] Core concept explained by learner
 - [x] Knowledge check passed
@@ -117,7 +136,7 @@
 - Optional work deferred: HTTP `If-Match`/ETag precondition contract and explicit row-locking comparison are deferred.
 ## Weekly gates
 - [x] Week 1: Durable validated CRUD
-- [ ] Week 2: Isolated multi-user API
+- [x] Week 2: Isolated multi-user API
 - [ ] Week 3: Recoverable background work
 - [ ] Week 4: Operated release and capstone
 
@@ -126,8 +145,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 14 / W2.7, Orient
-- File/function/section: Week 2 correctness review; security/race/cache scenario pack
-- Next question or exercise: Answer five review questions covering identity, permissions, transactions, indexes, caching, and rate limits.
-- Next build task: Build or verify the Day 14 scenario pack: expired session, swapped workspace IDs, stale version, DB rollback, Redis outage, oversized input, and rate-limit behavior.
+- Module and phase: Day 15 / W3.1, Orient
+- File/function/section: Durable background jobs design and schema
+- Next question or exercise: Explain why long-running exports should become durable jobs instead of staying inside one HTTP request.
+- Next build task: Start Day 15 by designing a persistent export job table and accepted-job API contract.
 - Next validation command: `\.venv\Scripts\python.exe -m ruff check .` and `\.venv\Scripts\python.exe -m pytest -q tests`

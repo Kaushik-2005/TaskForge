@@ -11,12 +11,12 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-16
-- Roadmap day/module and implementation status: Day 13 / W2.6 security and resource limits completed; Redis-backed atomic rate limits are implemented for login, authenticated workspace writes, and selected expensive authenticated reads.
+- Last updated: 2026-09-17
+- Roadmap day/module and implementation status: Day 14 / W2.7 correctness review completed; Week 2 scenario evidence is documented and a minimal Content-Length request body limit is implemented.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
-- Middleware/error boundary: `src/taskforge/main.py` owns request ID propagation, structured access logs, and exception handlers for HTTP and validation errors. The HTTP error handler preserves headers such as `Retry-After`.
+- Middleware/error boundary: `src/taskforge/main.py` owns request ID propagation, structured access logs, and exception handlers for HTTP and validation errors. The HTTP error handler preserves headers such as `Retry-After`. A request body limit middleware rejects requests whose `Content-Length` exceeds `Settings.max_request_body_bytes`.
 - Configuration layer: `src/taskforge/config.py` owns startup settings loaded from environment variables, validates environment/log-level values, and configures Redis URL, timeout, and project-summary cache TTL.
 - Model/contract layer: `src/taskforge/models.py` owns request/response shapes, unknown-field rejection, UUID serialization, field limits, PATCH body validation, missing-versus-null semantics, and the task update `expected_version` contract. `src/taskforge/api.py` owns task cursor query-parameter validation.
 - Service layer: `src/taskforge/services.py` owns legacy project/task application rules. `src/taskforge/authorization_service.py` owns authenticated workspace/project/task/membership authorization decisions and the authorization-before-cache project summary flow.
@@ -113,7 +113,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates have optimistic concurrency protection, task lists have cursor pagination backed by a measured composite index, project summaries have Redis cache-aside support, and selected routes have Redis-backed rate limits. Legacy route reconciliation, worker, readiness check, global payload byte-size limit, cache stampede protection, trusted proxy/IP policy, and CI do not exist yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates have optimistic concurrency protection, task lists have cursor pagination backed by a measured composite index, project summaries have Redis cache-aside support, and selected routes have Redis-backed rate limits. Legacy route reconciliation, worker, readiness check, streaming request body enforcement without `Content-Length`, cache stampede protection, trusted proxy/IP policy, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -704,3 +704,38 @@ Rate-limit numbers are initial policy choices, not measured capacity limits. Cli
 
 #### Related decisions and next design step
 Related: ADR-010. Next design step is Day 14 correctness review and scenario pack.
+### Day 14 - W2.7: Correctness review
+- Calendar date(s): 2026-09-17
+- Status: Completed
+
+#### What changed
+Added a Week 2 correctness review package and one missing resource-boundary guard. `docs/week2-correctness-review.md` maps the scenario pack to existing tests, compares route behavior to the permission matrix, records Day 11 query-plan evidence, and states where session, durable, cached, and rate-limit state live. `docs/threat-model.md` records current assets, trust boundaries, threats, controls, and open risks. `docs/cache-policy.md` records cache-aside read behavior, tenant-scoped keying, invalidation, TTL, outage behavior, and security rules. Runtime code gained `Settings.max_request_body_bytes` and middleware in `src/taskforge/main.py` that returns 413 when `Content-Length` exceeds the configured limit.
+
+#### Why the design changed
+Week 2 introduced several separate protections: sessions, workspace authorization, optimistic concurrency, cursor/index work, Redis cache, rate limits, and input validation. Day 14 reconciles them into a single correctness picture and fills the missing oversized-input scenario from the roadmap.
+
+#### Boundary placement and ownership
+`src/taskforge/main.py` owns process-wide HTTP middleware concerns: request IDs, structured access logs, exception envelopes, and now coarse request body length rejection. `src/taskforge/config.py` owns the configured limit. Route handlers and services still own request schema, authentication, authorization, transactions, cache access, and rate-limit calls. PostgreSQL remains authoritative durable state; Redis remains disposable cache/control state.
+
+#### API, data, and compatibility impact
+Requests with `Content-Length` greater than `Settings.max_request_body_bytes` now receive `413` with error code `request_body_too_large`. No schema migration was required. The default limit is 1,000,000 bytes. Existing normal JSON requests remain compatible.
+
+#### Request / job flow
+```mermaid
+flowchart LR
+    Client --> SizeCheck[Content-Length check]
+    SizeCheck -->|too large| Reject[413 error]
+    SizeCheck -->|ok| Auth[Auth and route]
+    Auth --> Service[Service]
+    Service --> DB[(PostgreSQL)]
+    Service --> Redis[(Redis optional)]
+```
+
+#### Verification and evidence
+Focused validation passed: `\.venv\Scripts\python.exe -m ruff check .`; `\.venv\Scripts\python.exe -m pytest -q tests\test_app_boundaries.py tests\test_validation.py` returned 15 passed with two dependency deprecation warnings. Scenario evidence is listed in `docs/week2-correctness-review.md`. Full regression passed: `\.venv\Scripts\python.exe -m ruff check .`; `\.venv\Scripts\python.exe -m ruff format --check .`; `\.venv\Scripts\python.exe -m pytest -q tests` returned 100 passed with two dependency deprecation warnings.
+
+#### Known limitations after this day
+The body-size guard relies on `Content-Length`; it does not yet enforce a limit while streaming/chunking a body without that header. The query-plan report uses Day 11 measured evidence rather than a fresh Day 14 run. Rate-limit values remain starting policy choices, not measured capacity limits.
+
+#### Related decisions and next design step
+Related: ADR-005 through ADR-010. No new ADR was created because Day 14 mostly reviewed and documented existing decisions plus a small resource limit. Next design step is Day 15 / W3.1 durable background jobs.
