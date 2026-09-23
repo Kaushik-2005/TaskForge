@@ -397,6 +397,59 @@ def test_owner_can_create_and_list_workspace_tasks(
     assert [task["title"] for task in listed.json()] == ["Draft checklist"]
 
 
+def test_owner_can_search_workspace_tasks(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project_a = create_workspace_project(client, workspace_id, owner)
+        project_b = create_workspace_project(client, workspace_id, owner, "Second project")
+
+        create_workspace_task(
+            client,
+            workspace_id,
+            project_a["id"],
+            owner,
+            title="Deploy API",
+        )
+        create_workspace_task(
+            client,
+            workspace_id,
+            project_b["id"],
+            owner,
+            title="Deploy worker",
+        )
+
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/tasks/search",
+            params={"q": "deploy", "limit": 10},
+        )
+
+    assert response.status_code == 200
+    assert [task["title"] for task in response.json()] == [
+        "Deploy API",
+        "Deploy worker",
+    ]
+
+
+def test_outsider_cannot_search_workspace_tasks(
+    migrated_database_url: str,
+) -> None:
+    with TestClient(create_app(make_settings(migrated_database_url))) as client:
+        owner = register_and_login(client, "owner@example.com")
+        workspace_id = create_workspace(client, owner)
+
+        register_and_login(client, "outsider@example.com")
+
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/tasks/search",
+            params={"q": "deploy"},
+        )
+
+    assert response.status_code == 404
+
+
 def test_owner_can_read_workspace_task(
     migrated_database_url: str,
 ) -> None:

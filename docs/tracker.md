@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 17 / W3.3 Idempotency and reliable retries
+- Day / module: Day 18 / W3.4 Search and files
 - Calendar date: 2026-09-23
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Explain request deduplication, payload fingerprints, and why retries need a durable operation identity.
+- Exact current task: Day 18 complete; wait for request to start Day 19 / W3.5.
 - Last updated: 2026-09-23
 
 ## Day-by-day progress
@@ -30,7 +30,7 @@
 | 15 | W3.1 | 2026-09-22 | Completed | Checked | Completed |
 | 16 | W3.2 | 2026-09-22 | Completed | Checked | Completed |
 | 17 | W3.3 | 2026-09-22 to 2026-09-23 | Completed | Checked | Completed |
-| 18 | W3.4 | - | Not started | Not checked | Not started |
+| 18 | W3.4 | 2026-09-23 | Completed | Checked | Completed |
 | 19 | W3.5 | - | Not started | Not checked | Not started |
 | 20 | W3.6 | - | Not started | Not checked | Not started |
 | 21 | W3.7 | - | Not started | Not checked | Not started |
@@ -89,16 +89,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 17 / W3.3, BFP 10/12 retry sections; BFP 23 outbox; AWS transactional outbox and backoff/jitter references. Theory was explained and compared with current TaskForge choices.
-- Learner answer or concise evidence: Learner correctly selected `409 Conflict` for reuse of an idempotency key with a different request fingerprint. Learner explained that the key identifies one logical request, not an arbitrary stored result. Learner also identified stable export/job identity, attempt, output location, checksum, completion state, and metadata as necessary to reconcile an artifact after lease loss.
-- Exercise path/result: Duplicate-request and post-output-crash analysis completed and reviewed. The learner correctly distinguished an existing file from a verified artifact belonging to the exact logical export operation.
-- Changed files: `migrations/versions/0007_add_idempotency_and_move_job_export_link.py`, `migrations/versions/0008_retries_and_artifacts.py`, `src/taskforge/db_models.py`, `src/taskforge/jobs.py`, `src/taskforge/api.py`, `src/taskforge/errors.py`, `tests/test_idempotency.py`, and `tests/test_jobs.py`.
-- Commands and actual results: Ruff check passed; Ruff format check reported 49 files already formatted; full `pytest -q tests` passed with `116 passed` and two dependency deprecation warnings. Focused idempotency/job validation passed with 16 tests. The first migration test exposed an Alembic revision ID longer than PostgreSQL's 32-character version column; shortening the revision ID resolved it.
-- Design entry / related ADRs: Day 17 design review entry added; implementation ADR remains pending until the idempotency schema and transaction are selected.
-- Untested assumptions: No live process-kill/restart experiment, object-storage validation, or production retry tuning was run. Current retry classification treats explicit retryable errors, `OSError`, and `TimeoutError` as retryable; generic exceptions are terminal.
-- Weak concepts: Continue reinforcing that attempt-specific artifacts prevent stale workers from exposing their output, but do not provide exactly-once external side effects.
-- Optional work deferred: Broker/outbox publication, secure file download, retention cleanup, and live failure injection.
-- Optional work deferred: Process/thread alternatives beyond the bounded worker needed for the core lab.
+- Reading/sections: Day 18 / W3.4, BFP 11 search/relevance; PostgreSQL full-text search; S3 presigned URLs. Theory was explained with primary PostgreSQL and AWS references.
+- Learner answer or concise evidence: Learner selected substring search for the current scope, identified leading-wildcard performance limits, and explained when FTS or trigram search may become appropriate. Learner correctly placed authorization before storage-path resolution and distinguished a missing export from a missing succeeded artifact.
+- Exercise path/result: Search-model and private-download authorization exercise completed and reviewed.
+- Changed files: `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `src/taskforge/api.py`, `src/taskforge/db_models.py`, `src/taskforge/errors.py`, `src/taskforge/jobs.py`, `migrations/versions/0009_add_task_title_trigram_index.py`, `tests/test_task_search.py`, `tests/test_authorization.py`, `tests/test_jobs.py`.
+- Commands and actual results: Focused download tests passed with `4 passed`; formula-safety and traversal tests passed; the full `python -m pytest -q tests` command passed. Ruff remains unverified in the learner's working environment.
+- Design entry / related ADRs: Day 18 design entry added; search implementation decision remains pending until the endpoint query shape is selected.
+- Untested assumptions: Search relevance remains substring-only; no production query-plan/load measurement or cloud object-storage lifecycle has been run. Retention is a callable cleanup operation and is not yet scheduled by a production process.
+- Weak concepts: Continue reinforcing that PostgreSQL authorization predicates must remain in the search/download data path and that `ILIKE '%term%'` needs measurement or a trigram index as data grows.
+- Optional work deferred: Semantic search and cloud object storage remain comparison/design topics until the core local implementation is complete.
 
 ## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source
@@ -184,8 +183,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 18 / W3.4, Orient
-- File/function/section: Authorized task search and private CSV download.
-- Next question or exercise: Compare substring, PostgreSQL full-text, and semantic search for TaskForge.
-- Next build task: Design tenant-scoped search and a safe private artifact download path.
-- Next validation command: `\.venv\Scripts\python.exe -m ruff check .` and `\.venv\Scripts\python.exe -m pytest -q tests`
+- Module and phase: Day 19 / W3.5, Orient
+- File/function/section: Dependency deadlines, retry budgets, and circuit-breaker lab.
+- Next question or exercise: Calculate retry multiplication across layers and allocate a request deadline budget.
+- Next build task: Read the Day 19 roadmap scope and identify the first dependency boundary to make deadline-aware.
+- Next validation command: Confirm the Day 19 exercise inputs before implementation.

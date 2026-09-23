@@ -16,7 +16,13 @@ from test_authorization import (
 
 from taskforge.config import Settings
 from taskforge.db_models import JobRow
-from taskforge.jobs import ExportRepository, RetryableExportError, run_one_export
+from taskforge.jobs import (
+    ExportRepository,
+    RetryableExportError,
+    csv_safe_cell,
+    cleanup_expired_export_artifacts,
+    run_one_export,
+)
 from taskforge.main import create_app
 
 
@@ -137,6 +143,188 @@ def test_worker_completes_export_and_writes_csv(
         "project,task,status",
         "Launch plan,Draft checklist,todo",
     ]
+
+
+def test_owner_can_download_succeeded_export(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        project = create_workspace_project(client, workspace_id, owner)
+        create_workspace_task(client, workspace_id, project["id"], owner)
+        export = create_export(client, workspace_id, owner)
+
+        assert run_one_export(
+            app.state.session_factory,
+            str(tmp_path),
+        )
+
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.text.splitlines() == [
+        "project,task,status",
+        "Launch plan,Draft checklist,todo",
+    ]
+
+
+def test_outsider_cannot_download_export(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner-2@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+        register_and_login(client, "download-outsider@example.com")
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "export_not_found"
+
+
+def test_pending_export_cannot_be_downloaded(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner-3@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "export_not_ready"
+
+
+def test_missing_succeeded_artifact_returns_server_error(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner-4@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+        assert run_one_export(
+            app.state.session_factory,
+            str(tmp_path),
+        )
+        output_path = tmp_path / f"export_{UUID(export['id'])}_attempt_1.csv"
+        output_path.unlink()
+
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "export_artifact_missing"
+
+
+def test_csv_formula_prefixes_are_neutralized() -> None:
+    assert csv_safe_cell("=SUM(A1:A2)") == "'=SUM(A1:A2)"
+    assert csv_safe_cell("+123") == "'+123"
+    assert csv_safe_cell("-123") == "'-123"
+    assert csv_safe_cell("@command") == "'@command"
+    assert csv_safe_cell("ordinary text") == "ordinary text"
+
+
+def test_download_rejects_traversal_output_reference(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner-5@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+        assert run_one_export(
+            app.state.session_factory,
+            str(tmp_path),
+        )
+
+        engine = create_engine(migrated_database_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE exports "
+                        "SET output_location = :output_location "
+                        "WHERE id = :export_id"
+                    ),
+                    {
+                        "output_location": "exports/../outside.csv",
+                        "export_id": export["id"],
+                    },
+                )
+        finally:
+            engine.dispose()
+
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "export_artifact_missing"
+
+
+def test_retention_cleanup_expires_old_export_artifact(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "download-owner-6@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+        assert run_one_export(
+            app.state.session_factory,
+            str(tmp_path),
+        )
+        output_path = tmp_path / f"export_{UUID(export['id'])}_attempt_1.csv"
+        assert output_path.is_file()
+
+        engine = create_engine(migrated_database_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE exports "
+                        "SET completed_at = :completed_at "
+                        "WHERE id = :export_id"
+                    ),
+                    {
+                        "completed_at": datetime.now(UTC) - timedelta(days=2),
+                        "export_id": export["id"],
+                    },
+                )
+        finally:
+            engine.dispose()
+
+        removed = cleanup_expired_export_artifacts(
+            app.state.session_factory,
+            str(tmp_path),
+            timedelta(hours=24),
+        )
+        response = client.get(f"/api/v1/exports/{export['id']}/download")
+
+    assert removed == 1
+    assert not output_path.exists()
+    assert response.status_code == 410
+    assert response.json()["error"]["code"] == "export_expired"
 
 
 def test_worker_records_failure(

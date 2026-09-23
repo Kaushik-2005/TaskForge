@@ -23,7 +23,10 @@ from taskforge.db_models import (
     TaskRow,
 )
 from taskforge.errors import (
+    ExportArtifactMissingError,
+    ExportExpiredError,
     ExportNotFoundError,
+    ExportNotReadyError,
     IdempotencyConflictError,
     WorkspaceNotFoundError,
 )
@@ -62,8 +65,9 @@ class RetryableExportError(Exception):
 
 
 class ExportService:
-    def __init__(self, repository: "ExportRepository") -> None:
+    def __init__(self, repository: "ExportRepository", storage_dir: str) -> None:
         self.repository = repository
+        self.storage_dir = Path(storage_dir).resolve()
 
     def create_export(
         self,
@@ -90,6 +94,72 @@ class ExportService:
         if export is None:
             raise ExportNotFoundError
         return export
+
+    def get_download_path(
+        self,
+        current_user: UserRead,
+        export_id: UUID,
+    ) -> Path:
+        export = self.repository.get_for_user(current_user.id, export_id)
+        if export is None:
+            raise ExportNotFoundError
+        if export.status != ExportStatus.succeeded:
+            raise ExportNotReadyError
+        if export.output_reference is None:
+            raise ExportExpiredError
+
+        output_path = safe_output_path(self.storage_dir, export.output_reference)
+        if output_path is None:
+            raise ExportArtifactMissingError
+        if not output_path.is_file():
+            raise ExportArtifactMissingError
+        return output_path
+
+
+def safe_output_path(storage_dir: Path, output_reference: str) -> Path | None:
+    relative_reference = Path(output_reference)
+    if relative_reference.parts[:1] == ("exports",):
+        relative_reference = Path(*relative_reference.parts[1:])
+
+    output_path = (storage_dir / relative_reference).resolve()
+    try:
+        output_path.relative_to(storage_dir)
+    except ValueError:
+        return None
+    return output_path
+
+
+def cleanup_expired_export_artifacts(
+    session_factory: sessionmaker[Session],
+    export_storage_dir: str,
+    retention: timedelta,
+) -> int:
+    storage_dir = Path(export_storage_dir).resolve()
+    cutoff = datetime.now(UTC) - retention
+    removed = 0
+
+    with session_factory() as session:
+        exports = session.scalars(
+            select(ExportRow).where(
+                ExportRow.status == ExportStatus.succeeded.value,
+                ExportRow.completed_at.is_not(None),
+                ExportRow.completed_at < cutoff,
+                ExportRow.output_location.is_not(None),
+            )
+        ).all()
+
+        for export in exports:
+            if export.output_location is not None:
+                output_path = safe_output_path(storage_dir, export.output_location)
+                if output_path is not None:
+                    output_path.unlink(missing_ok=True)
+            export.output_location = None
+            export.output_checksum = None
+            removed += 1
+
+        session.commit()
+
+    return removed
 
 
 class ExportRepository:
@@ -419,7 +489,17 @@ def generate_workspace_csv(session: Session, workspace_id: UUID, path: Path) -> 
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["project", "task", "status"])
-        writer.writerows(rows)
+        writer.writerows(
+            [csv_safe_cell(value) for value in row]
+            for row in rows
+        )
+
+
+def csv_safe_cell(value: str) -> str:
+    """Prevent spreadsheet applications from treating text as a formula."""
+    if value.startswith(("=", "+", "-", "@")):
+        return f"'{value}"
+    return value
 
 
 def sha256_file(path: Path) -> str:

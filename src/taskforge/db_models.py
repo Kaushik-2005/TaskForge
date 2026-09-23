@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -97,6 +98,12 @@ class ProjectRow(Base):
 class TaskRow(Base):
     __tablename__ = "tasks"
     __table_args__ = (
+        Index(
+            "ix_tasks_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
         CheckConstraint("title <> ''", name="ck_tasks_title_not_blank"),
         CheckConstraint(
             "status IN ('todo', 'in_progress', 'done')", name="ck_tasks_status"

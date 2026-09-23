@@ -18,6 +18,21 @@ class ExportNotFoundError(TaskForgeError):
     message = "Export not found"
 
 
+class ExportNotReadyError(TaskForgeError):
+    code = "export_not_ready"
+    message = "Export is not ready for download"
+
+
+class ExportArtifactMissingError(TaskForgeError):
+    code = "export_artifact_missing"
+    message = "Export output is unavailable"
+
+
+class ExportExpiredError(TaskForgeError):
+    code = "export_expired"
+    message = "Export output has expired"
+
+
 class TaskNotFoundError(TaskForgeError):
     code = "not_found"
     message = "Task not found"

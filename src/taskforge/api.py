@@ -13,6 +13,7 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.responses import FileResponse
 
 from taskforge.auth_repository import AuthRepository
 from taskforge.auth_service import AuthService
@@ -24,7 +25,9 @@ from taskforge.errors import (
     CsrfError,
     DuplicateMembershipError,
     EmailAlreadyRegisteredError,
+    ExportExpiredError,
     ExportNotFoundError,
+    ExportNotReadyError,
     IdempotencyConflictError,
     InvalidCredentialsError,
     InvalidStateTransitionError,
@@ -140,7 +143,10 @@ def get_export_service(request: Request) -> Generator[ExportService]:
         )
 
     with session_factory() as session:
-        service = ExportService(ExportRepository(session))
+        service = ExportService(
+            ExportRepository(session),
+            request.app.state.settings.export_storage_dir,
+        )
         try:
             yield service
             session.commit()
@@ -182,7 +188,12 @@ def map_service_error(error: TaskForgeError) -> HTTPException:
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     if isinstance(error, PermissionDeniedError):
         return api_error(status.HTTP_403_FORBIDDEN, error.code, error.message)
-    if isinstance(error, InvalidStateTransitionError | StaleTaskVersionError):
+    if isinstance(error, ExportExpiredError):
+        return api_error(status.HTTP_410_GONE, error.code, error.message)
+    if isinstance(
+        error,
+        InvalidStateTransitionError | StaleTaskVersionError | ExportNotReadyError,
+    ):
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     return api_error(status.HTTP_500_INTERNAL_SERVER_ERROR, error.code, error.message)
 
@@ -469,6 +480,26 @@ def get_export_status(
         raise map_service_error(exc) from exc
 
 
+@router.get("/exports/{export_id}/download")
+def download_export(
+    export_id: UUID,
+    request: Request,
+    current_user: CurrentUserDep,
+    exports: ExportServiceDep,
+) -> FileResponse:
+    check_authenticated_read_rate_limit(request, current_user)
+    try:
+        output_path = exports.get_download_path(current_user, export_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+    return FileResponse(
+        output_path,
+        media_type="text/csv",
+        filename=output_path.name,
+    )
+
+
 @router.post(
     "/workspaces/{workspace_id}/memberships",
     response_model=MembershipRead,
@@ -728,6 +759,31 @@ def list_workspace_tasks(
             page_size,
             after_created_at=after_created_at,
             after_id=after_id,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+
+
+@router.get(
+    "/workspaces/{workspace_id}/tasks/search",
+    response_model=list[TaskRead],
+)
+def search_workspace_tasks(
+    workspace_id: UUID,
+    request: Request,
+    current_user: CurrentUserDep,
+    authorization: AuthorizationServiceDep,
+    q: str = Query(min_length=1, max_length=120),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[TaskRead]:
+    check_authenticated_read_rate_limit(request, current_user)
+
+    try:
+        return authorization.search_workspace_tasks(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            query=q,
+            limit=limit,
         )
     except TaskForgeError as exc:
         raise map_service_error(exc) from exc

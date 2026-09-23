@@ -331,6 +331,30 @@ class AuthorizationRepository:
         rows = self.session.scalars(statement).all()
         return [self._task_read(row) for row in rows]
 
+    def search_workspace_tasks_for_user(
+        self,
+        user_id: UUID,
+        workspace_id: UUID,
+        query: str,
+        limit: int,
+    ) -> list[TaskRead] | None:
+        if not self.user_has_workspace_membership(user_id, workspace_id):
+            return None
+
+        statement = (
+            select(TaskRow)
+            .join(ProjectRow, ProjectRow.id == TaskRow.project_id)
+            .where(
+                ProjectRow.workspace_id == workspace_id,
+                TaskRow.title.ilike(f"%{query}%"),
+            )
+            .order_by(TaskRow.created_at, TaskRow.id)
+            .limit(limit)
+        )
+
+        rows = self.session.scalars(statement).all()
+        return [self._task_read(row) for row in rows]
+
     def get_workspace_task_for_user(
         self,
         user_id: UUID,

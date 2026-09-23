@@ -12,7 +12,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-23
-- Roadmap day/module and implementation status: Day 17 / W3.3 completed; PostgreSQL jobs, leases, idempotency, bounded retries, conditional completion, and attempt-specific artifact finalization are implemented.
+- Roadmap day/module and implementation status: Day 18 / W3.4 completed; PostgreSQL tenant-safe substring search, private CSV download, artifact safety, and callable retention cleanup are implemented.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
@@ -866,3 +866,21 @@ Transactional outbox remains a future comparison, not current implementation. Ne
 
 #### Implementation follow-up - 2026-09-23
 The design is now implemented. Migration `0008_retries_artifacts` adds attempt state, retry timing, and output checksums. Idempotency keys are scoped by user, workspace, operation, and key. Retryable failures return jobs to `pending` until `max_attempts`; terminal failures become `failed`. Workers generate attempt-specific temporary files, checksum them, atomically finalize them, and conditionally record the output under the current owner token. Full validation passed with 116 tests. Remaining limitations are live process recovery, object storage, cleanup policy, secure downloads, and future outbox publication.
+
+### Day 18 - W3.4: Search and files
+- Calendar date(s): 2026-09-23
+- Status: Completed
+#### What changed
+Added workspace-wide task search through repository, service, and HTTP layers; enabled PostgreSQL `pg_trgm`/GIN indexing for substring matching; added authorized CSV download; added storage-root containment, formula-safe CSV cells, missing-artifact handling, and bounded retention cleanup.
+#### Why the design changed
+TaskForge needs search that remains tenant-scoped and file delivery that does not turn filesystem paths into authorization. Substring search matches the current simple title-containment requirement; full-text and semantic search are deferred until measured relevance or scale justifies them.
+#### Boundary placement and ownership
+The future search repository will own the workspace predicate, bounded query, and deterministic ordering. The service/API will authenticate and authorize the workspace before returning results. Download authorization will load the export through its workspace membership before resolving a server-controlled artifact path. Storage inconsistency will be logged and returned as a sanitized server error.
+#### API, data, and compatibility impact
+The API now exposes `GET /api/v1/workspaces/{workspace_id}/tasks/search` and `GET /api/v1/exports/{export_id}/download`. Migration `0009_add_task_title_trigram_index` enables the title trigram index. Download returns `409` when not ready, `410` after intentional retention expiry, and `500` for unexpected storage inconsistency.
+#### Verification and evidence
+Learner correctly compared substring and full-text semantics, identified the leading-wildcard limitation, and distinguished missing resources, not-ready exports, missing succeeded artifacts, and expired artifacts. Focused search/authorization tests passed with `40 passed`; download tests passed with `4 passed`; formula/traversal/retention tests passed; the full test suite and requested lint/format checks passed.
+#### Known limitations after this day
+Search remains substring-only and has no measured production workload/query plan. Retention cleanup is callable but not scheduled by a production lifecycle process. Cloud object storage, presigned URLs, and semantic search remain deferred.
+#### Related decisions and next design step
+Next step: Day 19 / W3.5 dependency resilience—make timeout budgets, retry ownership, and dependency failure behavior explicit.

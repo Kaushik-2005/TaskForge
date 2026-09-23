@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     project_summary_cache_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     max_request_body_bytes: int = Field(default=1_000_000, ge=1)
     export_storage_dir: str = Field(default=".dist/exports", min_length=1)
+    export_retention_hours: int = Field(default=24, ge=1, le=8760)
     job_lease_seconds: int = Field(default=30, ge=1, le=3600)
     worker_concurrency: int = Field(default=2, ge=1, le=32)
 

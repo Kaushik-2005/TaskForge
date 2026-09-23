@@ -269,6 +269,25 @@ class AuthorizationService:
             raise WorkspaceNotFoundError
         return tasks
 
+    def search_workspace_tasks(
+        self,
+        current_user: UserRead,
+        workspace_id: UUID,
+        query: str,
+        limit: int,
+    ) -> list[TaskRead]:
+        tasks = self.repository.search_workspace_tasks_for_user(
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            query=query,
+            limit=limit,
+        )
+
+        if tasks is None:
+            raise WorkspaceNotFoundError
+
+        return tasks
+
     def get_workspace_task(
         self,
         current_user: UserRead,
