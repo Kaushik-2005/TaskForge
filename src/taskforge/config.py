@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     redis_timeout_seconds: float = Field(default=0.2, gt=0, le=5)
     project_summary_cache_ttl_seconds: int = Field(default=30, ge=1, le=3600)
     max_request_body_bytes: int = Field(default=1_000_000, ge=1)
+    export_storage_dir: str = Field(default=".dist/exports", min_length=1)
+    job_lease_seconds: int = Field(default=30, ge=1, le=3600)
+    worker_concurrency: int = Field(default=2, ge=1, le=32)
 
     model_config = SettingsConfigDict(
         env_file=".env",

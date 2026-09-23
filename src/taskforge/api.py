@@ -3,7 +3,16 @@ from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 
 from taskforge.auth_repository import AuthRepository
 from taskforge.auth_service import AuthService
@@ -15,6 +24,8 @@ from taskforge.errors import (
     CsrfError,
     DuplicateMembershipError,
     EmailAlreadyRegisteredError,
+    ExportNotFoundError,
+    IdempotencyConflictError,
     InvalidCredentialsError,
     InvalidStateTransitionError,
     LastOwnerError,
@@ -27,8 +38,10 @@ from taskforge.errors import (
     UserNotFoundError,
     WorkspaceNotFoundError,
 )
+from taskforge.jobs import ExportRepository, ExportService
 from taskforge.models import (
     AuthSessionRead,
+    ExportRead,
     MembershipCreate,
     MembershipRead,
     MembershipUpdate,
@@ -117,12 +130,32 @@ def get_authorization_service(request: Request) -> Generator[AuthorizationServic
             raise
 
 
+def get_export_service(request: Request) -> Generator[ExportService]:
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "export_unavailable",
+            "Exports require PostgreSQL storage",
+        )
+
+    with session_factory() as session:
+        service = ExportService(ExportRepository(session))
+        try:
+            yield service
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+
 ServiceDep = Annotated[TaskForgeService, Depends(get_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 AuthorizationServiceDep = Annotated[
     AuthorizationService,
     Depends(get_authorization_service),
 ]
+ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]
 
 
 def api_error(status_code: int, code: str, message: str) -> HTTPException:
@@ -137,11 +170,15 @@ def map_service_error(error: TaskForgeError) -> HTTPException:
         error,
         ProjectNotFoundError
         | TaskNotFoundError
+        | ExportNotFoundError
         | UserNotFoundError
         | WorkspaceNotFoundError,
     ):
         return api_error(status.HTTP_404_NOT_FOUND, error.code, error.message)
-    if isinstance(error, DuplicateMembershipError | LastOwnerError):
+    if isinstance(
+        error,
+        DuplicateMembershipError | LastOwnerError | IdempotencyConflictError,
+    ):
         return api_error(status.HTTP_409_CONFLICT, error.code, error.message)
     if isinstance(error, PermissionDeniedError):
         return api_error(status.HTTP_403_FORBIDDEN, error.code, error.message)
@@ -386,6 +423,50 @@ def create_workspace(
 ) -> WorkspaceRead:
     check_authenticated_write_rate_limit(request, current_user)
     return authorization.create_workspace(current_user, payload)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/exports",
+    response_model=ExportRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_workspace_export(
+    workspace_id: UUID,
+    response: Response,
+    request: Request,
+    current_user: CurrentUserDep,
+    exports: ExportServiceDep,
+    _csrf: CsrfDep,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    ],
+) -> ExportRead:
+    check_authenticated_write_rate_limit(request, current_user)
+    try:
+        export = exports.create_export(
+            current_user,
+            workspace_id,
+            idempotency_key,
+        )
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
+    response.headers["Location"] = f"/api/v1/exports/{export.id}"
+    return export
+
+
+@router.get("/exports/{export_id}", response_model=ExportRead)
+def get_export_status(
+    export_id: UUID,
+    request: Request,
+    current_user: CurrentUserDep,
+    exports: ExportServiceDep,
+) -> ExportRead:
+    check_authenticated_read_rate_limit(request, current_user)
+    try:
+        return exports.get_export(current_user, export_id)
+    except TaskForgeError as exc:
+        raise map_service_error(exc) from exc
 
 
 @router.post(

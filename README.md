@@ -4,7 +4,7 @@ TaskForge is a backend systems learning project following the canonical curricul
 
 ## Current status
 
-Day 11 / W2.4 indexes and query performance is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, task update audit events, deterministic task cursor pagination, and a measured task-list index. Memory storage remains available for focused unit-style tests.
+Day 17 / W3.3 idempotency and reliable retries is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, task update audit events, deterministic task cursor pagination, a measured task-list index, Redis cache/rate-limit support, and durable export jobs with atomic claims, leases, ownership tokens, idempotency keys, bounded retries, checksummed attempt-specific artifacts, and bounded worker concurrency. Memory storage remains available for focused unit-style tests.
 
 ## Records
 
@@ -39,6 +39,13 @@ Run the API:
 
 ```powershell
 python -m uvicorn taskforge.main:app --reload
+```
+
+Run one worker pass, or keep polling for pending exports:
+
+```powershell
+python -m taskforge.worker --once
+python -m taskforge.worker
 ```
 
 Smoke check:
@@ -94,6 +101,11 @@ Project and task API:
 - `PATCH /api/v1/projects/{project_id}/tasks/{task_id}` requires `expected_version`
 - `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
 
+Workspace and export API:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports` returns `202 Accepted` after the export and pending job commit together.
+- `GET /api/v1/exports/{export_id}` returns the authorized export status.
+
 With the default `postgres` backend, user/session/project/task data is durable in PostgreSQL and survives API process restarts. Tests that need fast in-memory behavior explicitly pass `storage_backend='memory'`.
 
 Validation behavior:
@@ -109,10 +121,12 @@ Validation behavior:
 - Unsafe project/task mutations with a session cookie require `X-CSRF-Token`.
 - Local HTTP uses `TASKFORGE_SESSION_COOKIE_SECURE=false`; production HTTPS should set it to `true`.
 - Access logs are structured JSON and omit request bodies.
+- Export status is tenant-scoped. A completed export reports a private output reference; serving/download authorization is deferred.
 
 ## Limitations
 
-- Workspace-scoped project/task authorization is implemented. Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
+- Workspace-scoped project/task/export authorization is implemented. Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
+- Day 17 uses user/workspace/operation-scoped idempotency, bounded retry attempts, temporary-file cleanup, attempt-specific output paths, and SHA-256 artifact metadata. Live process recovery testing, secure file download, and broker/outbox publication remain future work.
 - No readiness/dependency health, cache, public deployment profile, or CI exists yet.
 
 

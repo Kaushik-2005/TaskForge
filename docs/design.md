@@ -11,8 +11,8 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-17
-- Roadmap day/module and implementation status: Day 14 / W2.7 correctness review completed; Week 2 scenario evidence is documented and a minimal Content-Length request body limit is implemented.
+- Last updated: 2026-09-23
+- Roadmap day/module and implementation status: Day 17 / W3.3 completed; PostgreSQL jobs, leases, idempotency, bounded retries, conditional completion, and attempt-specific artifact finalization are implemented.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
@@ -24,7 +24,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Persistence layer: `src/taskforge/repositories.py` owns legacy PostgreSQL CRUD, cursor task listing, and version-checked task updates through SQLAlchemy sessions. `src/taskforge/authorization_repository.py` owns membership-scoped workspace/project/task/membership data access, cursor task listing, version-checked task updates, and project summary aggregate queries. `src/taskforge/store.py` remains process-local memory storage for focused tests only. `src/taskforge/db.py` owns engine/sessionmaker construction. `src/taskforge/db_models.py` owns ORM table mappings including task versions and audit events. Alembic migrations live under `migrations/`, including task-list cursor index migration `0004`.
 - Cache layer: `src/taskforge/cache.py` owns project summary cache key construction, Redis/no-op cache adapters, graceful Redis failure behavior, and post-commit cache-delete scheduling.
 - Rate-limit layer: `src/taskforge/rate_limit.py` owns Redis Lua-script rate limiting, null test fallback, rate-limit results, and fail-open/fail-closed behavior inputs.
-- Worker/background layer: not implemented.
+- Worker/background layer: `src/taskforge/jobs.py` owns export/job repository operations, atomic claim/complete flow, lease renewal, retry scheduling, CSV generation, checksumming, temporary-file cleanup, and terminal success/failure updates. `src/taskforge/worker.py` owns bounded thread-worker orchestration.
 
 ### File ownership
 - `AGENTS.md`: tutoring and repository operating contract.
@@ -45,16 +45,21 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - `src/taskforge/repositories.py`: PostgreSQL project/task repository implementation.
 - `src/taskforge/cache.py`: project summary cache key, Redis cache adapter, null cache adapter, and after-commit invalidation helpers.
 - `src/taskforge/rate_limit.py`: Redis Lua-script rate limiter, null limiter for tests, and rate-limit result contract.
+- `src/taskforge/jobs.py`: durable export/job repository, export service, one-worker CSV processor, and terminal state updates.
+- `src/taskforge/worker.py`: executable one-shot or polling entry point for the export worker.
 - `src/taskforge/security.py`: password hashing and high-entropy token generation/hash helpers.
 - `src/taskforge/auth_repository.py`: PostgreSQL user/session persistence for authentication.
 - `alembic.ini`: Alembic configuration.
 - `migrations/env.py`: Alembic migration environment.
 - `migrations/versions/0001_initial_schema.py`: initial PostgreSQL schema migration.
+- `migrations/versions/0005_add_exports_and_jobs.py`: durable jobs and exports schema migration.
+- `migrations/versions/0006_add_job_leases.py`: lease expiry and ownership-token migration.
 - `tests/test_health.py`: health endpoint smoke test.
 - `tests/test_projects_tasks.py`: Day 2 HTTP contract tests plus UUID-aware missing-resource regression coverage.
 - `tests/test_validation.py`: Day 3 validation tests.
 - `tests/test_services.py`: Day 4 service-layer tests.
 - `tests/test_app_boundaries.py`: Day 4 config, middleware, and logging tests.
+- `tests/test_jobs.py`: export acceptance, tenant-scoped status, worker success, and worker failure tests.
 - `docs/project-contract.md`: current supported endpoint and non-goals.
 - `docs/tracker.md`: progress, evidence, blockers, and exact resume position.
 - `docs/learning.md`: learning notes and corrections.
@@ -77,6 +82,11 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: PostgreSQL repositories, migration tooling, request-scoped sessions, commit/rollback tests, isolated integration databases, and checked pool-demand reasoning across worker processes.
 - Implemented: sessions table migration, password/token security helpers, and AuthRepository tests for active, expired, revoked, and missing sessions.
 - Implemented: authenticated workspace creation; membership add/list/update/delete under `/api/v1/workspaces/{workspace_id}/memberships`; workspace project create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects`; workspace task create/list/read/update/delete under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`; workspace project summary read under `/api/v1/workspaces/{workspace_id}/projects/{project_id}/summary`; outsider `404`; in-tenant `403`; duplicate membership `409`; last-owner protection; task parent-child swap protection; version-checked task PATCH requests; audit events for successful task updates; deterministic task cursor pagination; a measured `(project_id, created_at, id)` task-list index; Redis cache-aside project summaries with TTL and post-commit invalidation; and Redis-backed rate limits for login, authenticated workspace writes, task list reads, and project summary reads.
+- Implemented: `POST /api/v1/workspaces/{workspace_id}/exports` authorizes workspace membership and commits an export plus pending job together before returning `202`; `GET /api/v1/exports/{export_id}` authorizes through the export's workspace; and `run_one_export` generates a small workspace CSV and records synchronized job/export success or sanitized failure state.
+- Implemented: export claims use `FOR UPDATE SKIP LOCKED`, expired leases can be reclaimed with a new owner token, a heartbeat renews active leases, terminal updates require the current token, and the worker runs a configured bounded number of export operations.
+- Implemented: export requests require a user/workspace/operation-scoped `Idempotency-Key`; canonical fingerprints replay identical requests and reject same-scope changed requests; concurrent duplicates produce one logical export.
+- Implemented: jobs track attempts, maximum attempts, retry timing, and last error. Explicit retryable failures use bounded exponential backoff with jitter; terminal failures are recorded after the attempt limit or for non-retryable exceptions.
+- Implemented: workers write to an attempt-specific temporary path, compute a SHA-256 checksum, atomically finalize the attempt-specific output, and record its reference/checksum only through conditional owner completion.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting. PostgreSQL is authoritative for project summaries; Redis stores only derived project summary cache entries and disposable rate-limit counters.
@@ -85,6 +95,8 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Path IDs must be valid UUIDs before storage lookup.
 - Task status cannot move directly from `todo` to `done`; services own this rule. Task updates require the caller to supply the version they edited, and repositories update only if the durable row still has that version. Task list order is deterministic by `(created_at, id)`, and cursor predicates use the same pair. Project summary cache entries must be authorized before lookup and keyed by cache schema version, workspace ID, and project ID.
 - PostgreSQL is now the default runtime persistence backend. Workspace-scoped routes enforce membership authorization; legacy unauthenticated development routes still use a configured default workspace until that route surface is reconciled.
+- Accepted export work is durable only after the export, job, and idempotency record commit. The export is the user-facing resource; the job is the execution record. Job and export statuses are updated together under the current owner token.
+- Running jobs carry an owner token and lease expiry. A completion or failure update is accepted only when the job is still running under that token. Lease expiry makes recovery eligible; it does not terminate the old worker.
 
 ### Request and background-job flows
 - Health request flow:
@@ -99,7 +111,9 @@ client -> middleware -> FastAPI route -> health handler -> middleware/log -> res
 client -> middleware -> /api/v1 route -> request DB session -> service -> PostgresStore -> PostgreSQL -> commit/rollback -> response
 ```
 
-- Task update flow includes a conditional version check and audit insert in the same transaction. Task list flow can use `after_created_at` plus `after_id` to continue after a stable cursor. Project summary read flow authorizes through PostgreSQL before checking Redis; task writes schedule summary cache invalidation after commit. Login is rate-limited before password verification, while selected authenticated read/write routes are rate-limited after current-user resolution. Background jobs are planned for Week 3 and do not exist.
+- Task update flow includes a conditional version check and audit insert in the same transaction. Task list flow can use `after_created_at` plus `after_id` to continue after a stable cursor. Project summary read flow authorizes through PostgreSQL before checking Redis; task writes schedule summary cache invalidation after commit. Login is rate-limited before password verification, while selected authenticated read/write routes are rate-limited after current-user resolution. Export acceptance creates the export and job in one PostgreSQL transaction; a worker claims one pending job, commits `running`, generates the CSV outside that claim transaction, and commits synchronized terminal state.
+- The Day 16 worker claim uses `FOR UPDATE SKIP LOCKED`, commits ownership before CSV work, renews the lease from a separate session, and conditionally finalizes state with the owner token. Thread concurrency is bounded by `Settings.worker_concurrency`; each job operation owns a separate SQLAlchemy session.
+- Day 17 adds idempotency lookup before creation, a savepoint around the concurrent insert race, retry scheduling after eligible failures, and attempt-specific temporary/final artifact paths. The current DB job path does not publish to a broker; an outbox remains a future design.
 
 ### High-level diagram
 ```mermaid
@@ -113,7 +127,7 @@ flowchart LR
 ```
 
 ### Known limitations
-- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, and membership authorization are implemented for the Day 9 route surface. Task updates have optimistic concurrency protection, task lists have cursor pagination backed by a measured composite index, project summaries have Redis cache-aside support, and selected routes have Redis-backed rate limits. Legacy route reconciliation, worker, readiness check, streaming request body enforcement without `Content-Length`, cache stampede protection, trusted proxy/IP policy, and CI do not exist yet.
+- Authentication is implemented with server-side sessions, auth routes, cookies, expiry/revocation, and CSRF enforcement for cookie-authenticated unsafe mutations. Workspace-scoped project, task, membership, and export authorization are implemented. Task updates have optimistic concurrency protection, task lists have cursor pagination backed by a measured composite index, project summaries have Redis cache-aside support, selected routes have Redis-backed rate limits, and bounded lease-owned export workers exist. Legacy route reconciliation, live process recovery testing, secure download serving, readiness checks, streaming request body enforcement without `Content-Length`, cache stampede protection, trusted proxy/IP policy, and CI do not exist yet.
 - Memory-backed tests are not evidence for database isolation, transaction behavior, or multi-process consistency; PostgreSQL integration tests cover the Day 6 persistence checks.
 - Request ID logging is tested through FastAPI's test client but has not been manually inspected in a live Uvicorn terminal session.
 - The test client emits dependency deprecation warnings that do not fail Day 4 but should be watched as dependencies evolve.
@@ -739,3 +753,116 @@ The body-size guard relies on `Content-Length`; it does not yet enforce a limit 
 
 #### Related decisions and next design step
 Related: ADR-005 through ADR-010. No new ADR was created because Day 14 mostly reviewed and documented existing decisions plus a small resource limit. Next design step is Day 15 / W3.1 durable background jobs.
+
+### Day 15 - W3.1: Durable background jobs
+- Calendar date(s): 2026-09-22
+- Status: Completed
+
+#### What changed
+Added migration `0005_add_exports_and_jobs`, ORM rows for `jobs` and `exports`, the `ExportService` and repository in `src/taskforge/jobs.py`, tenant-scoped export routes, and a one-worker CSV processor. `POST /api/v1/workspaces/{workspace_id}/exports` creates both pending records in one PostgreSQL transaction and returns `202` with a status URL only after the request dependency commits. `GET /api/v1/exports/{export_id}` returns status only when the current user belongs to the export's workspace.
+
+#### Why the design changed
+Exports can outlive an HTTP request and must survive an API restart. PostgreSQL is already TaskForge's durable authority, so the first job implementation uses a database job row instead of introducing a broker. The export is kept as the user-facing resource while the job records execution state.
+
+#### Boundary placement and ownership
+`src/taskforge/api.py` owns HTTP status, CSRF, rate limits, and dependency transaction boundaries. `src/taskforge/jobs.py` owns export authorization through membership-scoped queries, job/export state transitions, CSV generation, and sanitized terminal errors. PostgreSQL owns accepted work and status. The current worker owns output generation and terminal updates; no lease or retry owner exists yet.
+
+#### API, data, and compatibility impact
+Added `POST /api/v1/workspaces/{workspace_id}/exports` with `202 Accepted` and `Location`, plus `GET /api/v1/exports/{export_id}`. Migration `0005` adds `jobs` and `exports`, with foreign keys, status checks, and a workspace/created-at index. The default local output directory is `.dist/exports`; the status response exposes a relative output reference, not an absolute server path. A download endpoint is not implemented.
+
+#### Request / job flow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant PG as PostgreSQL
+    participant Worker
+    Client->>API: POST workspace export
+    API->>PG: commit export + pending job
+    API-->>Client: 202 + status URL
+    Worker->>PG: claim one pending job
+    Worker->>PG: commit running
+    Worker->>Worker: generate CSV
+    Worker->>PG: commit succeeded or failed
+    Client->>API: GET export status
+    API->>PG: authorize workspace + read status
+    API-->>Client: status and output reference
+```
+
+#### Verification and evidence
+- `\.venv\Scripts\python.exe -m pytest -q tests\test_jobs.py`: `4 passed`.
+- `\.venv\Scripts\python.exe -m pytest -q tests`: `104 passed`, with two dependency deprecation warnings.
+- `\.venv\Scripts\python.exe -m ruff check .`: passed.
+- `\.venv\Scripts\python.exe -m ruff format --check .`: 45 files already formatted.
+- Tests cover atomic export/job persistence, tenant isolation, successful CSV generation, and terminal failure recording.
+
+#### Known limitations after this day
+The worker uses find-then-claim and is intentionally limited to one worker. A crash after claim can leave a job `running` indefinitely. There are no leases, ownership tokens, bounded retries, idempotency keys, crash-safe output finalization, or secure file download. Duplicate status fields are updated together by this implementation but need stronger conditional ownership semantics in Day 16.
+
+#### Related decisions and next design step
+No new ADR was created; PostgreSQL jobs were already the roadmap's selected execution mechanism. Next design step is Day 16 / W3.2: atomic claims with `FOR UPDATE SKIP LOCKED`, lease ownership, conditional completion, and bounded concurrency.
+
+### Day 16 - W3.2: Concurrency and lifecycle ownership
+- Calendar date(s): 2026-09-22
+- Status: Completed
+
+#### What changed
+Added migration `0006_add_job_leases` with `owner_token` and `lease_expires_at`, atomic PostgreSQL claims using `FOR UPDATE SKIP LOCKED`, lease renewal through a separate session, conditional success/failure updates, and configured bounded worker concurrency. The worker now reclaims pending or expired jobs, starts a lease heartbeat while CSV generation runs, and refuses stale-owner completion.
+
+#### Why the design changed
+Day 15's find-then-claim path could allow duplicate claims when multiple workers ran. A database row lock coordinates separate worker processes, while a lease provides a bounded ownership interval for workers that crash or lose connectivity. Slow CSV generation must remain outside the claim transaction.
+
+#### Boundary placement and ownership
+`ExportRepository.claim_one` owns the short claim transaction and token assignment. `renew_lease` owns conditional lease extension. `complete` and `fail` own conditional terminal transitions for the current token. `run_one_export` owns the work/heartbeat lifecycle. `worker.py` owns the bounded thread pool; each task gets its own SQLAlchemy session. PostgreSQL remains the authority for ownership; process-local thread state only controls local concurrency.
+
+#### API, data, and compatibility impact
+No new public endpoint was added. Existing export status responses now reflect jobs that may be reclaimed after lease expiry. Settings add `TASKFORGE_JOB_LEASE_SECONDS` and `TASKFORGE_WORKER_CONCURRENCY`. Migration `0006` adds the lease index and nullable ownership fields, preserving existing pending/succeeded/failed rows.
+
+#### Request / job flow
+```mermaid
+sequenceDiagram
+    participant W1 as Worker A
+    participant PG as PostgreSQL
+    participant W2 as Worker B
+    W1->>PG: SELECT pending/expired FOR UPDATE SKIP LOCKED
+    PG-->>W1: job + owner token A
+    W1->>PG: commit running + lease A
+    W2->>PG: claim next available job
+    W1->>PG: renew lease A
+    W1->>W1: generate CSV outside transaction
+    W1->>PG: complete WHERE owner_token = A
+    PG-->>W1: success or zero rows if ownership changed
+```
+
+#### Verification and evidence
+- The isolated concurrency exercise measured sequential waits at 1.60 seconds and bounded concurrency of two at 0.80 seconds with maximum active count two.
+- `tests/test_jobs.py` passed 6 tests, including concurrent distinct claims and expired-owner rejection.
+- Full `\.venv\Scripts\python.exe -m pytest -q tests` passed with 106 tests and two dependency deprecation warnings.
+- Ruff check passed; format check reported 46 files already formatted.
+
+#### Known limitations after this day
+Lease expiry does not stop an old worker. A worker that loses ownership may still create an orphan output before conditional completion rejects it. No live process-kill/restart test, multi-process load test, lease tuning measurement, retry policy, idempotency key, or crash-safe artifact finalization exists yet. CPU-heavy export work remains in threads and is not moved to a process pool.
+
+#### Related decisions and next design step
+No new ADR was created; the implementation follows the roadmap's PostgreSQL job design. Next design step is Day 17 / W3.3: idempotency keys, bounded retries, payload fingerprints, and safe output finalization.
+
+### Day 17 - W3.3: Idempotency and reliable retries
+- Calendar date(s): 2026-09-23
+- Status: In Progress
+#### What changed
+No runtime architecture change. The theory checkpoint clarified the planned idempotency contract and the evidence required to reconcile output after a stale lease. The current architecture remains PostgreSQL-backed jobs with at-least-once execution semantics.
+#### Why the design changed
+A committed request can have a lost response, causing a client retry. A lease can also expire after a worker has created an output. Both cases require a stable logical operation identity independent of the HTTP response and worker process.
+#### Boundary placement and ownership
+The future idempotency record will be owned by PostgreSQL and scoped to the authenticated operation context. The API will compare a canonical request fingerprint; PostgreSQL uniqueness will protect concurrent creation. Worker artifact metadata will identify the export/job operation and support integrity checks. These are planned boundaries, not implemented behavior.
+#### API, data, and compatibility impact
+Planned behavior: new key creates an operation; same key and same fingerprint replays the existing operation; same key and different fingerprint returns `409 Conflict`. No endpoint or schema change has been implemented in this checkpoint.
+#### Verification and evidence
+Learner correctly selected `409 Conflict` for same-key/different-payload reuse and identified stable operation identity, attempt, output location, checksum, output status, and metadata as reconciliation evidence. No runtime validation was run because implementation has not started.
+#### Known limitations after this day
+The current code still has no idempotency table, fingerprinting, retry policy, or artifact finalization protocol. The old worker may still create an orphan output after lease loss. Exactly-once execution is not claimed.
+#### Related decisions and next design step
+Transactional outbox remains a future comparison, not current implementation. Next step: choose the idempotency schema and implement the atomic key/export/job creation path with concurrent duplicate tests.
+
+#### Implementation follow-up - 2026-09-23
+The design is now implemented. Migration `0008_retries_artifacts` adds attempt state, retry timing, and output checksums. Idempotency keys are scoped by user, workspace, operation, and key. Retryable failures return jobs to `pending` until `max_attempts`; terminal failures become `failed`. Workers generate attempt-specific temporary files, checksum them, atomically finalize them, and conditionally record the output under the current owner token. Full validation passed with 116 tests. Remaining limitations are live process recovery, object storage, cleanup policy, secure downloads, and future outbox publication.

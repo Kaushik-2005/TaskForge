@@ -117,3 +117,20 @@ class MembershipRead(BaseModel):
     email: str
     role: MembershipRole
     created_at: datetime
+
+
+class ExportStatus(StrEnum):
+    pending = "pending"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
+class ExportRead(StrictModel):
+    id: UUID
+    workspace_id: UUID
+    status: ExportStatus
+    created_at: datetime
+    completed_at: datetime | None = None
+    output_reference: str | None = None
+    error: str | None = None

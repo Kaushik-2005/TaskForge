@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 14 / W2.7 Correctness review
-- Calendar date: 2026-09-17
+- Day / module: Day 17 / W3.3 Idempotency and reliable retries
+- Calendar date: 2026-09-23
 - Phase: Review
 - Status: Completed
 - Mode: Guided Learning
-- Exact current task: Completed Day 14 correctness review, scenario-pack evidence, threat model, cache policy, query-plan report, and full validation.
-- Last updated: 2026-09-17
+- Exact current task: Explain request deduplication, payload fingerprints, and why retries need a durable operation identity.
+- Last updated: 2026-09-23
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -27,9 +27,9 @@
 | 12 | W2.5 | 2026-09-16 | Completed | Checked | Completed |
 | 13 | W2.6 | 2026-09-16 | Completed | Checked | Completed |
 | 14 | W2.7 | 2026-09-17 | Completed | Checked | Completed |
-| 15 | W3.1 | - | Not started | Not checked | Not started |
-| 16 | W3.2 | - | Not started | Not checked | Not started |
-| 17 | W3.3 | - | Not started | Not checked | Not started |
+| 15 | W3.1 | 2026-09-22 | Completed | Checked | Completed |
+| 16 | W3.2 | 2026-09-22 | Completed | Checked | Completed |
+| 17 | W3.3 | 2026-09-22 to 2026-09-23 | Completed | Checked | Completed |
 | 18 | W3.4 | - | Not started | Not checked | Not started |
 | 19 | W3.5 | - | Not started | Not checked | Not started |
 | 20 | W3.6 | - | Not started | Not checked | Not started |
@@ -42,6 +42,44 @@
 | 27 | W4.6 | - | Not started | Not checked | Not started |
 | 28 | W4.7 | - | Not started | Not checked | Not started |
 
+## Last completed module evidence - Day 15
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 15 / W3.1, BFP 10 queue/job lifecycle; durable acceptance, polling/status lookup, claim/complete, terminal failure, and process-local callback limitations.
+- Learner answer or concise evidence: Learner correctly explained that `202 Accepted` must follow the transaction committing the export/job records. Learner identified the lost-work risk when the response precedes commit, the ambiguous outcome when a crash follows commit but precedes the response, and the role of an idempotency key in safe retry.
+- Exercise path/result: Learner mapped pending/running/succeeded/failed crash boundaries and identified durable claim identity, attempt count, lease expiry, retry limits, and output reconciliation needs. Learner then designed a minimal PostgreSQL `jobs`/`exports` model, an atomic acceptance transaction, authorized status lookup, and a one-worker claim/complete flow. Review corrections: lease expiry removes trusted ownership but does not prove the old worker stopped; completion must be conditional on the current ownership token. Duplicate status fields need an explicit synchronization invariant, and find-then-claim is only safe under the one-worker assumption.
+- Changed files: `migrations/versions/0005_add_exports_and_jobs.py`, `src/taskforge/db_models.py`, `src/taskforge/jobs.py`, `src/taskforge/worker.py`, `src/taskforge/models.py`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/errors.py`, `tests/test_jobs.py`, `README.md`, and learning/design/session records.
+- Commands and actual results: Focused Day 15 tests passed with `4 passed` after the worker entry-point addition; full `\.venv\Scripts\python.exe -m pytest -q tests` passed with `104 passed` before the entry-point-only change and two dependency deprecation warnings; `\.venv\Scripts\python.exe -m ruff check .` passed; final format check reported 45 files already formatted; `python -m taskforge.worker --help` passed.
+- Design entry / related ADRs: `docs/design.md` Day 15 entry; no new ADR because this is the first bounded PostgreSQL job implementation and lease/idempotency decisions remain deferred to Days 16–17.
+- Untested assumptions: The one-worker find-then-claim flow is not safe for multiple workers. There are no leases, ownership tokens, retry limits, idempotency keys, crash-recovery reconciliation, or download endpoint yet. Local output storage is a learning implementation, not a release storage policy. Worker exceptions are intentionally reduced to a generic client-safe failure message; structured worker logging is deferred.
+- Weak concepts: Continue reinforcing that lease expiry is not proof of worker termination and that repeated execution remains possible when leases and idempotency are added.
+- Optional work deferred: Broker/outbox design is outside today's core build and will remain a comparison topic unless the roadmap requires it.
+
+## Last completed module evidence - Day 16
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 16 / W3.2, BFP 20 concurrency and parallelism; BFP 16 cancellation basics; async event-loop and bounded-concurrency concepts.
+- Learner answer or concise evidence: Learner correctly explained that claims must commit before slow work, that slow work must occur outside the claim transaction, and that lease expiry means ownership is stale rather than proving worker termination or side-effect absence. Learner also correctly distinguished I/O-bound concurrency from CPU-bound Python work under the GIL and identified the need to bound concurrency against database, CPU, memory, file, and downstream capacity. Precision correction recorded: with `FOR UPDATE SKIP LOCKED`, another worker skips an uncommitted locked row; without that clause it may observe the previous committed state.
+- Exercise path/result: Sequential async waits took 1.60s; bounded concurrency of 2 took 0.80s with maximum active count 2; blocking `time.sleep()` event-loop demonstration was completed. Added atomic claim, leases, renewal heartbeat, ownership-token conditional completion, expiry reclaim, and bounded ThreadPoolExecutor worker tests.
+- Changed files: `migrations/versions/0006_add_job_leases.py`, `src/taskforge/db_models.py`, `src/taskforge/config.py`, `src/taskforge/jobs.py`, `src/taskforge/worker.py`, `tests/test_jobs.py`, and learning/design/session records.
+- Commands and actual results: Focused Day 16 job tests passed with `6 passed`; full `\.venv\Scripts\python.exe -m pytest -q tests` passed with `106 passed` and two dependency deprecation warnings; `\.venv\Scripts\python.exe -m ruff check .` passed; final format check reported 46 files already formatted.
+- Design entry / related ADRs: `docs/design.md` Day 16 entry; no new ADR because the implementation follows the roadmap's PostgreSQL claim mechanism and lease decision remains bounded to the worker lab.
+- Untested assumptions: No live process-kill/restart recovery experiment, multi-process load test, or measured lease/concurrency tuning was run. A worker that loses its lease may still produce an orphan output; idempotent artifact finalization is deferred to Day 17. CPU-heavy work is not moved to a process pool.
+- Weak concepts: Continue reinforcing that lease expiry does not stop execution and that process-local locks cannot coordinate separate worker processes.
+- Optional work deferred: Process-pool CPU execution, adaptive concurrency, lease metrics, and live failure injection.
+
 ## Current module evidence
 - [x] Required selected reading completed or explained with source
 - [x] Core concept explained by learner
@@ -51,15 +89,16 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 14 correctness review covers identity, permissions, transactions, indexing, caching, and resource-limit failure modes from Week 2.
-- Learner answer or concise evidence: Learner correctly explained session state location, expired/revoked session behavior, tenant-scoped nested task lookup, optimistic concurrency via expected_version, authorize-before-cache, and route-specific Redis outage policy.
-- Exercise path/result: Existing tests map to expired session, swapped workspace/task IDs, stale version, DB rollback, Redis outage, and cached authorization. Added minimal oversized-input protection using a Content-Length request body limit and a 413 test. Added review deliverables: `docs/week2-correctness-review.md`, `docs/threat-model.md`, and `docs/cache-policy.md`.
-- Changed files: `src/taskforge/config.py`, `src/taskforge/main.py`, `tests/test_app_boundaries.py`, `docs/week2-correctness-review.md`, `docs/threat-model.md`, `docs/cache-policy.md`, `docs/learning.md`, `docs/session-log.md`, `docs/design.md`, and `docs/tracker.md`.
-- Commands and actual results: Focused validation passed with `15 passed`; full gate passed: `\.venv\Scripts\python.exe -m ruff check .`, `\.venv\Scripts\python.exe -m ruff format --check .` with 41 files already formatted, and `\.venv\Scripts\python.exe -m pytest -q tests` with `100 passed`, two dependency deprecation warnings.
-- Design entry / related ADRs: `docs/design.md` Day 14 entry; relevant existing ADRs are ADR-005 through ADR-010.
-- Untested assumptions: The new request body guard only rejects requests that include `Content-Length`; streaming/chunked bodies without that header are not bounded yet. Query-plan report uses Day 11 measured evidence rather than a fresh Day 14 run.
-- Weak concepts: None blocking; continue reinforcing that cached state and rate limits are not authorization.
-- Optional work deferred: Streaming body limit without `Content-Length`, trusted proxy/IP policy, rate-limit telemetry, cache stampede protection, production load testing, and broader route reconciliation.
+- Reading/sections: Day 17 / W3.3, BFP 10/12 retry sections; BFP 23 outbox; AWS transactional outbox and backoff/jitter references. Theory was explained and compared with current TaskForge choices.
+- Learner answer or concise evidence: Learner correctly selected `409 Conflict` for reuse of an idempotency key with a different request fingerprint. Learner explained that the key identifies one logical request, not an arbitrary stored result. Learner also identified stable export/job identity, attempt, output location, checksum, completion state, and metadata as necessary to reconcile an artifact after lease loss.
+- Exercise path/result: Duplicate-request and post-output-crash analysis completed and reviewed. The learner correctly distinguished an existing file from a verified artifact belonging to the exact logical export operation.
+- Changed files: `migrations/versions/0007_add_idempotency_and_move_job_export_link.py`, `migrations/versions/0008_retries_and_artifacts.py`, `src/taskforge/db_models.py`, `src/taskforge/jobs.py`, `src/taskforge/api.py`, `src/taskforge/errors.py`, `tests/test_idempotency.py`, and `tests/test_jobs.py`.
+- Commands and actual results: Ruff check passed; Ruff format check reported 49 files already formatted; full `pytest -q tests` passed with `116 passed` and two dependency deprecation warnings. Focused idempotency/job validation passed with 16 tests. The first migration test exposed an Alembic revision ID longer than PostgreSQL's 32-character version column; shortening the revision ID resolved it.
+- Design entry / related ADRs: Day 17 design review entry added; implementation ADR remains pending until the idempotency schema and transaction are selected.
+- Untested assumptions: No live process-kill/restart experiment, object-storage validation, or production retry tuning was run. Current retry classification treats explicit retryable errors, `OSError`, and `TimeoutError` as retryable; generic exceptions are terminal.
+- Weak concepts: Continue reinforcing that attempt-specific artifacts prevent stale workers from exposing their output, but do not provide exactly-once external side effects.
+- Optional work deferred: Broker/outbox publication, secure file download, retention cleanup, and live failure injection.
+- Optional work deferred: Process/thread alternatives beyond the bounded worker needed for the core lab.
 
 ## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source
@@ -145,8 +184,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 15 / W3.1, Orient
-- File/function/section: Durable background jobs design and schema
-- Next question or exercise: Explain why long-running exports should become durable jobs instead of staying inside one HTTP request.
-- Next build task: Start Day 15 by designing a persistent export job table and accepted-job API contract.
+- Module and phase: Day 18 / W3.4, Orient
+- File/function/section: Authorized task search and private CSV download.
+- Next question or exercise: Compare substring, PostgreSQL full-text, and semantic search for TaskForge.
+- Next build task: Design tenant-scoped search and a safe private artifact download path.
 - Next validation command: `\.venv\Scripts\python.exe -m ruff check .` and `\.venv\Scripts\python.exe -m pytest -q tests`

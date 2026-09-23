@@ -13,6 +13,11 @@ class WorkspaceNotFoundError(TaskForgeError):
     message = "Workspace not found"
 
 
+class ExportNotFoundError(TaskForgeError):
+    code = "export_not_found"
+    message = "Export not found"
+
+
 class TaskNotFoundError(TaskForgeError):
     code = "not_found"
     message = "Task not found"
@@ -71,3 +76,8 @@ class UnauthenticatedError(AuthError):
 class CsrfError(AuthError):
     code = "csrf_required"
     message = "Valid CSRF token required"
+
+
+class IdempotencyConflictError(TaskForgeError):
+    code = "idempotency_conflict"
+    message = "Idempotency key was already used with a different request"
