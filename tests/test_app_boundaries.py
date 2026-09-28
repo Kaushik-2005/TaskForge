@@ -41,6 +41,33 @@ def test_request_id_header_is_preserved() -> None:
     assert response.headers["x-request-id"] == "req-123"
 
 
+def test_http_metrics_use_bounded_route_and_status_labels() -> None:
+    app = create_app(Settings(environment="test", storage_backend="memory"))
+    client = TestClient(app)
+
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert app.state.http_metrics.request_count == {("GET", "/health/live", "2xx"): 1}
+
+
+def test_http_metrics_record_duration_bucket() -> None:
+    app = create_app(Settings(environment="test", storage_backend="memory"))
+    metrics = app.state.http_metrics
+
+    metrics.record("GET", "/health/live", "2xx", 75)
+    metrics.record("GET", "/health/live", "2xx", 250)
+    metrics.record("GET", "/health/live", "2xx", 750)
+    metrics.record("GET", "/health/live", "2xx", 1500)
+
+    assert metrics.duration_buckets == {
+        ("GET", "/health/live", "2xx", "le_100ms"): 1,
+        ("GET", "/health/live", "2xx", "le_500ms"): 1,
+        ("GET", "/health/live", "2xx", "le_1s"): 1,
+        ("GET", "/health/live", "2xx", "gt_1s"): 1,
+    }
+
+
 def test_access_log_is_structured_and_omits_body(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 22 / W4.1 Observability and SLOs
+- Day / module: Day 23 / W4.2 Load and capacity
 - Calendar date: 2026-09-28
-- Phase: Not Started
-- Status: Not Started
+- Phase: Review
+- Status: Completed
 - Mode: Guided Learning
-- Exact current task: Begin the Day 22 observability and SLO orientation.
+- Exact current task: Day 23 complete; begin Day 24 scaling trade-offs when requested.
 - Last updated: 2026-09-28
 
 ## Day-by-day progress
@@ -34,8 +34,8 @@
 | 19 | W3.5 | 2026-09-27 | Completed | Checked | Completed |
 | 20 | W3.6 | 2026-09-27 to 2026-09-28 | Completed | Checked | Completed |
 | 21 | W3.7 | 2026-09-28 | Completed | Checked | Completed |
-| 22 | W4.1 | - | Not started | Not checked | Not started |
-| 23 | W4.2 | - | Not started | Not checked | Not started |
+| 22 | W4.1 | 2026-09-28 | Completed | Checked | Completed |
+| 23 | W4.2 | 2026-09-28 | Completed | Checked | Completed |
 | 24 | W4.3 | - | Not started | Not checked | Not started |
 | 25 | W4.4 | - | Not started | Not checked | Not started |
 | 26 | W4.5 | - | Not started | Not checked | Not started |
@@ -117,6 +117,50 @@
 - Untested assumptions: An actual OS process kill during CSV generation, multi-instance recovery, and production storage cleanup remain unverified; the controlled test covers durable expired-claim recovery.
 - Weak concepts: None identified in the five-question review; continue distinguishing stale ownership from proof of worker termination.
 - Optional work deferred: Broader exactly-once and losslessness claims remain out of scope.
+
+## Last completed module evidence - Day 22 / W4.1
+- [x] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: OpenTelemetry signals and Google SRE service-level objectives.
+- Learner answer or concise evidence: Learner correctly diagnosed rising queue age with normal SQL latency as a likely worker/queue capacity or health bottleneck, selected worker utilization/throughput/execution duration as next signals, chose bounded route/method/status labels over high-cardinality identifiers, explained why p99 exposes user-visible tail latency hidden by averages, and defined a valid 99.9%/500 ms/30-day export-status SLO with a narrow 401 exclusion.
+- Exercise path/result: Signal-selection, metric-cardinality, tail-latency, and SLI/SLO definition exercises completed; implemented the first bounded HTTP metrics increment.
+- Changed files: `src/taskforge/observability.py`, `src/taskforge/main.py`, `tests/test_app_boundaries.py`, and Day 22 records.
+- Commands and actual results: Focused observability boundary tests passed with `7 passed`; the learner reported Ruff check, Ruff format check, and the full pytest suite all passed.
+- Design entry / related ADRs: Day 22 design entry; no new ADR yet.
+- Untested assumptions: Trace correlation, database/cache/job instrumentation, metric export, and measured SLO reporting.
+- Weak concepts: Metric labels, histogram tails, sampling, and error-budget policy remain to be checked.
+- Optional work deferred: Production telemetry backend selection, dashboards, and alert routing remain deferred.
+
+## Current module evidence - Day 23 / W4.2
+- [ ] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 23 load, capacity, queueing, and measurement.
+- Learner answer or concise evidence: Learner correctly applied Little's Law to estimate 20 in-flight exports and explained why unbounded queues turn arrival-rate overload into growing wait time, resource use, and stale work. Learner proposed a reproducible 20-workspace/400-project/40,000-task dataset, a 70/20/10 read-write-export mix, 50-user gradual ramp, and cold/warm cache comparison.
+- Exercise path/result: Load-model concept exercise and baseline workload specification completed; environment capture completed, an authenticated Locust workload was implemented, and a repeatable fixed-dataset seeder with automatic PowerShell environment-file generation was added.
+- Changed files: `load_tests/locustfile.py`, `load_tests/README.md`, `scripts/seed_load_data.py`, `pyproject.toml`, `docs/performance-report.md`, and Day 23 records.
+- Commands and actual results: Captured Python 3.12.0, PostgreSQL 17.11, Redis 7.4.11, worker concurrency 2, and initial database pool size 5 with max overflow 0. The existing five-table schema was stamped at `0001_initial_schema` and upgraded successfully to the current Alembic head. Earlier smoke attempts failed due to API startup, missing variables, and invalid credentials; the corrected smoke test passed with `6 requests`, `0 failures`, and exit code 0. The first 50-user run exposed pool exhaustion (`QueuePool limit of size 5 overflow 0`); with pool size 20 and max overflow 10, the baseline completed with 17,933 requests, 6 failures (`0.03%`), 27.1 requests/sec, aggregate p50 37 ms, p95 77 ms, p99 130 ms, p99.9 1,200 ms, and maximum 1,600 ms.
+- Design entry / related ADRs: Day 23 design entry updated with the measured pool bottleneck and bounded pool tuning; no new ADR yet.
+- Untested assumptions: The six baseline failures were five `401` task-list responses and one `429` task-list response; the `429` is consistent with the existing read-rate policy, and the `401` investigation was explicitly deferred. The cold-cache run completed with 17,854 requests, 3 rate-limit failures, 24.88 requests/sec, p50 48 ms, p95 150 ms, p99 250 ms, p99.9 390 ms, and maximum 700 ms. The warm-cache run completed with 17,660 requests, 58 failures (`0.33%`), 24.53 requests/sec, p50 41 ms, and maximum 7,997 ms; failures included 22 export-status `404`s and 36 task/export `500`s, whose causes were deferred. Resource measurements, queue age, and a bottleneck rerun remain pending. Seeder lint/format could not be run in the agent shell because its virtual-environment interpreter is unavailable.
+- Weak concepts: To be identified during the Day 23 review.
+- Optional work deferred: None selected yet.
+
+## 2026-09-28 - Day 23 / W4.2 completion note
+- Implementation evidence: Deterministic load seeder, authenticated Locust workload, pool bottleneck experiment, pool-20 rerun, cold-cache run, warm-cache run, queue/export measurements, and performance report completed.
+- Validation evidence: `python -m ruff check .`, `python -m ruff format --check .`, and `python -m pytest -q` all passed.
+- Deferred limitations: Five baseline task-list `401`s, warm-run `404`/`500` causes, peak rather than post-run resource measurements, and time-series pool-wait metrics remain unresolved or incomplete.
+- Exact next session: Start Day 24 / W4.3 scaling trade-offs.
 
 ## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source

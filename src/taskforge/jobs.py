@@ -489,10 +489,7 @@ def generate_workspace_csv(session: Session, workspace_id: UUID, path: Path) -> 
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["project", "task", "status"])
-        writer.writerows(
-            [csv_safe_cell(value) for value in row]
-            for row in rows
-        )
+        writer.writerows([csv_safe_cell(value) for value in row] for row in rows)
 
 
 def csv_safe_cell(value: str) -> str:

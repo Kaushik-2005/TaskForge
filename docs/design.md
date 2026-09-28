@@ -12,7 +12,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-28
-- Roadmap day/module and implementation status: Day 21 / W3.7 completed; Day 22 / W4.1 observability and SLOs is next.
+- Roadmap day/module and implementation status: Day 22 / W4.1 completed; Day 23 / W4.2 load and capacity is next.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
@@ -26,6 +26,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Rate-limit layer: `src/taskforge/rate_limit.py` owns Redis Lua-script rate limiting, null test fallback, rate-limit results, and fail-open/fail-closed behavior inputs.
 - Worker/background layer: `src/taskforge/jobs.py` owns export/job repository operations, atomic claim/complete flow, lease renewal, retry scheduling, CSV generation, checksumming, temporary-file cleanup, and terminal success/failure updates. `src/taskforge/worker.py` owns bounded thread-worker orchestration.
 - Real-time lab layer: `src/taskforge/realtime.py` owns process-local workspace subscriber queues, bounded fan-out, and slow-consumer resync signaling. The WebSocket route in `src/taskforge/api.py` owns connection authentication, Origin validation, workspace authorization, and cleanup.
+- Observability layer: `src/taskforge/observability.py` owns the bounded process-local HTTP request counter and fixed duration buckets; `src/taskforge/main.py` records route-template and status-class measurements in request middleware.
 
 ### File ownership
 - `AGENTS.md`: tutoring and repository operating contract.
@@ -89,6 +90,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: jobs track attempts, maximum attempts, retry timing, and last error. Explicit retryable failures use bounded exponential backoff with jitter; terminal failures are recorded after the attempt limit or for non-retryable exceptions.
 - Implemented: workers write to an attempt-specific temporary path, compute a SHA-256 checksum, atomically finalize the attempt-specific output, and record its reference/checksum only through conditional owner completion.
 - Implemented lab: authenticated workspace WebSocket subscriptions with allowed-Origin validation, bounded subscriber queues, disconnect cleanup, and `resync_required` signaling for slow consumers. The broker is process-local and receives synthetic events; it is not durable or replayable.
+- Implemented lab: process-local HTTP request metrics with bounded method/route/status dimensions and fixed duration buckets. No exporter, dashboard, database-call instrumentation, job-age metric, cache metric, or trace propagation exists yet.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting. PostgreSQL is authoritative for project summaries; Redis stores only derived project summary cache entries and disposable rate-limit counters.
@@ -889,7 +891,7 @@ Next step: Day 19 / W3.5 dependency resilience—make timeout budgets, retry own
 
 ### Day 19 - W3.5: Dependency resilience
 - Calendar date(s): 2026-09-27
-- Status: In Progress
+- Status: Completed
 #### What changed
 Added the separate `src/taskforge/resilience_lab.py` module with scripted dependency outcomes, a fake clock, one retry owner, deadline propagation, circuit-breaker states, a half-open probe, a bounded bulkhead, and a combined resilience wrapper.
 #### Why the design changed
@@ -940,3 +942,56 @@ The learner correctly diagnosed expired-lease reclamation and stale-worker fenci
 The review did not run an actual OS process kill during CSV generation, multi-instance recovery, or production storage cleanup. The controlled restart test demonstrates durable expired-claim recovery but does not establish exactly-once execution or universal losslessness.
 #### Related decisions and next design step
 The recovery review is complete with observed behavior recorded in the failure matrix. Next step: Day 22 / W4.1 observability and SLOs.
+
+### Day 22 - W4.1: Observability and SLOs
+- Calendar date(s): 2026-09-28
+- Status: Completed
+#### What changed
+No runtime architecture change yet. The module begins by defining the signals needed to diagnose request latency, database latency, queue delay, job execution, cache behavior, and dependency failures.
+#### Why the design changed
+Existing structured access logs show request outcomes, but logs alone cannot efficiently answer tail-latency, queue-age, error-rate, or cross-layer-correlation questions. The observability increment will add bounded, low-cardinality measurements and trace context without exposing secrets or unbounded user identifiers.
+#### Boundary placement and ownership
+The application will own request and job instrumentation; PostgreSQL and Redis remain dependencies whose latency and error outcomes must be measured at their call boundaries. SLO definitions will describe user-visible outcomes, not internal component health alone.
+#### API, data, and compatibility impact
+None at orientation. Planned telemetry must not change API behavior or persist sensitive payloads.
+#### Verification and evidence
+The learner correctly distinguished queue delay from execution delay, selected bounded metric labels, explained tail latency, defined a 99.9% export-status SLO, and described error-budget response. The bounded HTTP metrics increment passed focused tests and the learner reported Ruff, format, and full-suite validation passed.
+#### Known limitations after this day
+Metrics are process-local and not exported to a time-series backend. Database, cache, job, dependency, and trace instrumentation remain incomplete; the SLO is proposed rather than continuously measured.
+#### Related decisions and next design step
+Next step: Day 23 / W4.2 load and capacity measurement.
+
+### Day 23 - W4.2: Load and capacity
+- Calendar date(s): 2026-09-28
+- Status: In Progress
+#### What changed
+No runtime architecture change yet. The module begins by defining a reproducible workload and the measurements needed to understand throughput, latency, queue age, pool waits, and resource saturation.
+#### Why the design changed
+Performance targets without a workload, dataset, warmup, duration, and resource context are not useful evidence. TaskForge needs a measured baseline before selecting a bottleneck to fix.
+#### Boundary placement and ownership
+The load harness will own workload generation and reporting. The application will expose the measured request/job/cache signals; PostgreSQL, Redis, workers, and the host remain resources whose saturation must be observed rather than inferred.
+#### API, data, and compatibility impact
+None at orientation. The workload should use existing authenticated endpoints and must not change production API semantics.
+#### Verification and evidence
+The first 50-user run with the initial API pool (`pool_size=5`, `max_overflow=0`) produced repeated 5-second pool timeouts and approximately 56% failures, confirming API-side PostgreSQL pool exhaustion. The final CSV-backed pool-20 rerun completed 17,933 requests at 24.94 requests/sec with 6 failures (`0.03%`); aggregate p50 was 37 ms, p95 77 ms, p99 130 ms, p99.9 1,200 ms, and maximum 1,600 ms. A cold-cache run completed 17,854 requests with 3 rate-limit failures at 24.88 requests/sec; a warm-cache run completed 17,660 requests with 58 failures (`0.33%`), including deferred `404`/`500` diagnosis. The pool bottleneck was reduced and the required baseline comparison was recorded.
+#### Known limitations after this day
+The result is a local baseline, not a production capacity claim. The task-list `401`s and warm-run `404`/`500`s were deferred, resource values are post-run snapshots rather than peak time series, and database pool-wait time was not directly exported. Queue and export-duration snapshots were captured.
+
+The detailed captured report is maintained in `performance-report.md`.
+#### Related decisions and next design step
+Next step: calculate in-flight work from throughput and average latency, then define the authenticated read/write/export workload mix.
+
+#### Workload decision
+The first baseline will use a fixed 20-workspace, 400-project, 40,000-task dataset; a 70% read, 20% write, and 10% export/status mix; and 50 virtual users ramped gradually. Cold-cache and warm-cache runs will be separate measurements. No capacity target is inferred before the baseline is observed.
+
+#### Environment captured
+Python 3.12.0, PostgreSQL 17.11, Redis 7.4.11, worker concurrency 2, database pool size 5, and max overflow 0 were recorded before the load harness was created.
+
+#### Load harness
+`load_tests/locustfile.py` owns the reproducible authenticated baseline workload. It uses environment-provided credentials and seeded workspace/project IDs, weights operations 70/20/10 across task reads, task writes, and export creation/status, and names requests with stable route templates. Dataset seeding and resource monitoring remain separate concerns.
+
+#### Dataset seeding
+`scripts/seed_load_data.py` owns deterministic local load-data creation. It uses stable UUIDs and conflict-safe PostgreSQL inserts for the planned 100 users, 20 workspaces, 400 projects, and 40,000 tasks. It is a disposable benchmark fixture, not an application startup migration.
+
+#### Measured pool bottleneck
+The initial 50-user run saturated the API's five-connection PostgreSQL pool and caused 5-second wait timeouts. The controlled rerun used `TASKFORGE_DATABASE_POOL_SIZE=20` and `TASKFORGE_DATABASE_MAX_OVERFLOW=10`. This improved the observed failure rate from roughly 56% to 0.03%, but the larger pool is a measured local test configuration rather than a universal production setting; it must be checked against PostgreSQL connection limits and other application processes.

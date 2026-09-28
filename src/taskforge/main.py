@@ -16,6 +16,7 @@ from taskforge.api import router
 from taskforge.cache import RedisProjectSummaryCache
 from taskforge.config import Settings, get_settings
 from taskforge.db import create_db_engine, create_session_factory
+from taskforge.observability import HttpMetrics
 from taskforge.rate_limit import NullRateLimiter, RedisRateLimiter
 from taskforge.realtime import WorkspaceUpdateBroker
 from taskforge.services import TaskForgeService
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
     app.state.workspace_update_broker = WorkspaceUpdateBroker()
+    app.state.http_metrics = HttpMetrics()
 
     redis_client = Redis.from_url(
         settings.redis_url,
@@ -103,6 +105,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
         response.headers["X-Request-ID"] = request_id
+        route = getattr(request.scope.get("route"), "path", "unmatched")
+        status_class = f"{response.status_code // 100}xx"
+        app.state.http_metrics.record(
+            request.method,
+            route,
+            status_class,
+            duration_ms,
+        )
         logger.info(
             json.dumps(
                 {

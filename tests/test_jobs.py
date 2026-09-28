@@ -572,8 +572,7 @@ def test_worker_restart_recovers_expired_claim(
         session.execute(
             update(JobRow)
             .where(JobRow.id == first_claim.job_id)
-            .values(lease_expires_at=datetime.now(UTC) -
-            timedelta(seconds=1))
+            .values(lease_expires_at=datetime.now(UTC) - timedelta(seconds=1))
         )
         session.commit()
 

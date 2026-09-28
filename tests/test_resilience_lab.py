@@ -114,9 +114,7 @@ def test_retry_owner_retries_then_returns_success() -> None:
 
 
 def test_retry_owner_stops_at_max_attempts() -> None:
-    dependency = MockDependency(
-        [DependencyResponse(DependencyStatus.server_error)]
-    )
+    dependency = MockDependency([DependencyResponse(DependencyStatus.server_error)])
     clock = FakeClock()
 
     result = call_with_retry(
@@ -133,9 +131,7 @@ def test_retry_owner_stops_at_max_attempts() -> None:
 
 
 def test_retry_owner_stops_when_deadline_is_exhausted() -> None:
-    dependency = MockDependency(
-        [DependencyResponse(DependencyStatus.server_error)]
-    )
+    dependency = MockDependency([DependencyResponse(DependencyStatus.server_error)])
     clock = FakeClock()
 
     result = call_with_retry(
@@ -152,9 +148,7 @@ def test_retry_owner_stops_when_deadline_is_exhausted() -> None:
 
 
 def test_retry_owner_does_not_backoff_after_success() -> None:
-    dependency = MockDependency(
-        [DependencyResponse(DependencyStatus.success, "ready")]
-    )
+    dependency = MockDependency([DependencyResponse(DependencyStatus.success, "ready")])
     clock = FakeClock()
 
     result = call_with_retry(
@@ -261,9 +255,7 @@ def test_resilient_call_retries_and_closes_circuit_on_success() -> None:
 
 
 def test_resilient_call_success_resets_previous_failures() -> None:
-    dependency = MockDependency(
-        [DependencyResponse(DependencyStatus.success, "ready")]
-    )
+    dependency = MockDependency([DependencyResponse(DependencyStatus.success, "ready")])
     clock = FakeClock()
     breaker = CircuitBreaker(clock, failure_threshold=3, cooldown_seconds=10)
     breaker.record_failure()
