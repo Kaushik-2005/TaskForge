@@ -1,24 +1,42 @@
 # TaskForge
 
-TaskForge is a backend systems learning project following the canonical curriculum in `roadmap.md`.
+TaskForge is a modular-monolith backend for workspaces, projects, tasks, and CSV exports.
 
-## Current status
+The API uses FastAPI. PostgreSQL stores users, sessions, workspaces, memberships, projects, tasks, audit events, exports, jobs, and idempotency records. Redis stores derived project-summary cache entries and rate-limit counters. A separate worker processes export jobs.
 
-Day 17 / W3.3 idempotency and reliable retries is complete. The repository has a FastAPI API with PostgreSQL-backed runtime persistence by default, Alembic migration tooling, request-scoped database sessions, isolated PostgreSQL integration tests, authentication, workspace authorization, project/task CRUD, version-checked task updates, task update audit events, deterministic task cursor pagination, a measured task-list index, Redis cache/rate-limit support, and durable export jobs with atomic claims, leases, ownership tokens, idempotency keys, bounded retries, checksummed attempt-specific artifacts, and bounded worker concurrency. Memory storage remains available for focused unit-style tests.
+## Components
 
-## Records
+- API: FastAPI and Uvicorn.
+- Authentication: PostgreSQL-backed sessions, password hashing, HttpOnly cookies, and CSRF tokens.
+- Authorization: workspace membership checks on workspace-scoped resources.
+- Database: PostgreSQL, SQLAlchemy, psycopg, and Alembic.
+- Cache and rate limits: Redis.
+- Worker: bounded export worker with PostgreSQL claims, leases, retries, fencing tokens, and attempt-specific artifacts.
+- Observability: request IDs, structured access logs, and bounded process-local HTTP metrics.
+- Realtime lab: authenticated WebSocket subscriptions with bounded queues. The broker is process-local.
+- Tests: pytest, HTTPX/FastAPI test client, PostgreSQL integration tests, and Ruff.
+- Load testing: Locust workload and deterministic dataset seeder.
 
-- `roadmap.md`: canonical curriculum.
-- `AGENTS.md`: tutoring and repository contract.
-- `docs/tracker.md`: progress and resume point.
-- `docs/learning.md`: learning notes.
-- `docs/session-log.md`: session handoffs.
-- `docs/decisions.md`: architecture decisions.
-- `docs/design.md`: current architecture snapshot and daily design history.
+## Repository layout
 
-## Setup and commands
+```text
+src/taskforge/       application code
+migrations/          Alembic migrations
+tests/               unit, API, and PostgreSQL integration tests
+load_tests/          Locust workload and load-test instructions
+scripts/             local data seeding scripts
+design.md            HLD and LLD
+roadmap.md           learning roadmap
+```
 
-Create and activate a virtual environment:
+## Requirements
+
+- Python 3.12
+- Docker Desktop
+- PostgreSQL 17 for the local Compose service
+- Redis 7 for the local Compose service
+
+## Setup
 
 ```powershell
 python -m venv .venv
@@ -26,59 +44,45 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-Optional local environment variables are shown in `.env.example`:
+Start dependencies:
 
 ```powershell
-TASKFORGE_ENVIRONMENT=local
-TASKFORGE_LOG_LEVEL=INFO
-TASKFORGE_STORAGE_BACKEND=postgres
-TASKFORGE_DATABASE_URL=postgresql+psycopg://taskforge:taskforge_dev_password@127.0.0.1:5433/taskforge
+docker compose up -d postgres redis
 ```
 
-Run the API:
-
-```powershell
-python -m uvicorn taskforge.main:app --reload
-```
-
-Run one worker pass, or keep polling for pending exports:
-
-```powershell
-python -m taskforge.worker --once
-python -m taskforge.worker
-```
-
-Smoke check:
-
-```powershell
-curl -i http://127.0.0.1:8000/health/live
-```
-
-Validate:
-
-```powershell
-python -m ruff check .
-python -m ruff format --check .
-python -m pytest -q
-```
-
-## Database
-
-Start local PostgreSQL on host port `5433`:
-
-```powershell
-docker compose up -d postgres
-```
-
-For runtime development, apply Alembic migrations from the host:
+Apply migrations:
 
 ```powershell
 python -m alembic upgrade head
 ```
 
-The Day 5 SQL lab scripts remain available for constraint/query practice. They copy SQL into the container and roll back their checks. The relational model is documented in `docs/relational-model.md`.
+## Run the API and worker
 
-## API endpoints
+Terminal 1:
+
+```powershell
+python -m uvicorn taskforge.main:app --reload
+```
+
+Terminal 2:
+
+```powershell
+python -m taskforge.worker
+```
+
+Health check:
+
+```powershell
+curl.exe http://127.0.0.1:8000/health/live
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+## API surface
 
 Authentication:
 
@@ -87,50 +91,81 @@ Authentication:
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
 
-Project and task API:
+Workspace resources:
 
-- `GET /health/live`
-- `POST /api/v1/projects`
-- `GET /api/v1/projects?page_size=20&name_contains=plan`
-- `GET /api/v1/projects/{project_id}`
-- `PATCH /api/v1/projects/{project_id}`
-- `DELETE /api/v1/projects/{project_id}`
-- `POST /api/v1/projects/{project_id}/tasks`
-- `GET /api/v1/projects/{project_id}/tasks?page_size=20&after_created_at=...&after_id=...`
-- `GET /api/v1/projects/{project_id}/tasks/{task_id}`
-- `PATCH /api/v1/projects/{project_id}/tasks/{task_id}` requires `expected_version`
-- `DELETE /api/v1/projects/{project_id}/tasks/{task_id}`
+- `POST /api/v1/workspaces`
+- `GET /api/v1/workspaces/{workspace_id}/memberships`
+- `POST /api/v1/workspaces/{workspace_id}/memberships`
+- `GET|POST /api/v1/workspaces/{workspace_id}/projects`
+- `GET|POST /api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks`
+- `GET|PATCH|DELETE /api/v1/workspaces/{workspace_id}/projects/{project_id}/tasks/{task_id}`
 
-Workspace and export API:
+Exports:
 
-- `POST /api/v1/workspaces/{workspace_id}/exports` returns `202 Accepted` after the export and pending job commit together.
-- `GET /api/v1/exports/{export_id}` returns the authorized export status.
+- `POST /api/v1/workspaces/{workspace_id}/exports`
+- `GET /api/v1/exports/{export_id}`
+- `GET /api/v1/exports/{export_id}/download`
 
-With the default `postgres` backend, user/session/project/task data is durable in PostgreSQL and survives API process restarts. Tests that need fast in-memory behavior explicitly pass `storage_backend='memory'`.
+`POST /exports` creates the export, job, and idempotency record in one transaction. It returns `202 Accepted` only after the transaction commits. Reusing an idempotency key with a different request returns `409 Conflict`.
 
-Validation behavior:
+## Data and consistency rules
 
-- Unknown request fields are rejected.
-- Path IDs must be valid UUIDs. `name_contains` filters projects case-insensitively and rejects an empty value.
-- Malformed IDs return `422`; valid missing resources return `404`.
-- Task status cannot change directly from `todo` to `done`.
-- Task PATCH requests require `expected_version`; stale versions return `409 stale_task_version` instead of silently overwriting newer data.
-- Task list cursor parameters `after_created_at` and `after_id` must be supplied together. Task lists order by `(created_at, id)` for deterministic pagination.
-- Every response includes `X-Request-ID`; incoming `X-Request-ID` is preserved.
-- Login sets an HttpOnly `taskforge_session` cookie and returns a CSRF token in the response body.
-- Unsafe project/task mutations with a session cookie require `X-CSRF-Token`.
-- Local HTTP uses `TASKFORGE_SESSION_COOKIE_SECURE=false`; production HTTPS should set it to `true`.
-- Access logs are structured JSON and omit request bodies.
-- Export status is tenant-scoped. A completed export reports a private output reference; serving/download authorization is deferred.
+- PostgreSQL is the source of truth.
+- Workspace membership controls access.
+- Authorization is applied before protected cache or file-path access.
+- Task updates require `expected_version` and return `409` for stale versions.
+- Task lists use bounded page sizes and deterministic cursor ordering.
+- Export acceptance commits the export and pending job together.
+- Workers claim jobs with row locking and commit ownership before slow work.
+- Lease expiry permits recovery; it does not prove the old worker stopped.
+- Completion requires the current ownership token.
+- Retries are bounded and use attempt-specific output paths.
+- Redis is disposable. Important state is not stored only in Redis.
 
-## Limitations
+## Load testing
 
-- Workspace-scoped project/task/export authorization is implemented. Legacy unauthenticated project/task routes still exist for local compatibility and need reconciliation with the workspace-scoped route surface.
-- Day 17 uses user/workspace/operation-scoped idempotency, bounded retry attempts, temporary-file cleanup, attempt-specific output paths, and SHA-256 artifact metadata. Live process recovery testing, secure file download, and broker/outbox publication remain future work.
-- No readiness/dependency health, cache, public deployment profile, or CI exists yet.
+Seed the fixed local dataset:
 
+```powershell
+python -m scripts.seed_load_data
+. .\.dist\load-test.env.ps1
+```
 
+The default dataset contains 100 users, 20 workspaces, 400 projects, and 40,000 tasks.
 
+Run the baseline:
 
+```powershell
+python -m locust -f load_tests/locustfile.py --headless --host http://127.0.0.1:8000 --users 50 --spawn-rate 0.5 --run-time 12m --csv results/taskforge-pool20
+```
 
+Workload weights are 70% task reads, 20% task writes, and 10% export workflows. Export workflows perform an export request and a status request.
+
+### Measured results
+
+Final local run:
+
+- Python 3.12.0, PostgreSQL 17.11, Redis 7.4.11
+- 50 users, worker concurrency 2
+- Database pool: 20 connections, 10 overflow
+- 17,933 requests
+- 6 failures: 0.03%
+- 24.94 requests/second
+- p50: 37 ms
+- p95: 77 ms
+- p99: 130 ms
+- p99.9: 1,200 ms
+- Maximum: 1,600 ms
+
+These are local measurements, not production capacity claims.
+
+## Validation
+
+```powershell
+python -m ruff check .
+python -m ruff format --check .
+python -m pytest -q
+```
+
+The final validation run passed all three commands.
 

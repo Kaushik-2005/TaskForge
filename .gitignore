@@ -10,6 +10,4 @@ dist/
 .dist/
 results/
 load-cookies.txt
-docs/*
-!docs/design.md
-!docs/tracker.md
+docs/
