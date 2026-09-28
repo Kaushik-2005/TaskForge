@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select, text, update
 from test_authorization import (
@@ -18,6 +19,7 @@ from taskforge.config import Settings
 from taskforge.db_models import JobRow
 from taskforge.jobs import (
     ExportRepository,
+    JobClaim,
     RetryableExportError,
     cleanup_expired_export_artifacts,
     csv_safe_cell,
@@ -428,6 +430,36 @@ def test_failed_generation_cleans_temporary_artifact(
     assert not list(tmp_path.iterdir())
 
 
+def test_stale_completion_removes_promoted_artifact(
+    migrated_database_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "stale-artifact@example.com")
+        create_export(client, create_workspace(client, owner), owner)
+
+    def reject_completion(
+        self: ExportRepository,
+        claim: JobClaim,
+        output_reference: str,
+        output_checksum: str,
+    ) -> bool:
+        return False
+
+    monkeypatch.setattr(ExportRepository, "complete", reject_completion)
+
+    assert run_one_export(
+        app.state.session_factory,
+        str(tmp_path),
+        lease_seconds=30,
+    )
+
+    assert not list(tmp_path.iterdir())
+
+
 def test_concurrent_workers_claim_different_jobs(
     migrated_database_url: str,
     tmp_path: Path,
@@ -517,3 +549,44 @@ def test_expired_owner_cannot_complete_after_reclaim(
     assert response.status_code == 200
     assert response.json()["status"] == "succeeded"
     assert response.json()["output_reference"] == "exports/current.csv"
+
+
+def test_worker_restart_recovers_expired_claim(
+    migrated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    app = create_app(make_settings(migrated_database_url, str(tmp_path)))
+
+    with TestClient(app) as client:
+        owner = register_and_login(client, "restart-owner@example.com")
+        workspace_id = create_workspace(client, owner)
+        export = create_export(client, workspace_id, owner)
+
+    with app.state.session_factory() as session:
+        repository = ExportRepository(session)
+        first_claim = repository.claim_one(30)
+        assert first_claim is not None
+        session.commit()
+
+    with app.state.session_factory() as session:
+        session.execute(
+            update(JobRow)
+            .where(JobRow.id == first_claim.job_id)
+            .values(lease_expires_at=datetime.now(UTC) -
+            timedelta(seconds=1))
+        )
+        session.commit()
+
+    assert run_one_export(
+        app.state.session_factory,
+        str(tmp_path),
+        lease_seconds=30,
+    )
+
+    with TestClient(app) as client:
+        login_existing_user(client, "restart-owner@example.com")
+        response = client.get(f"/api/v1/exports/{export['id']}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    assert response.json()["output_reference"] is not None

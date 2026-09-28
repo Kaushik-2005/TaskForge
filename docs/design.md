@@ -12,7 +12,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 
 ## Current architecture snapshot
 - Last updated: 2026-09-28
-- Roadmap day/module and implementation status: Day 20 / W3.6 completed; Day 21 / W3.7 recovery review is next.
+- Roadmap day/module and implementation status: Day 21 / W3.7 completed; Day 22 / W4.1 observability and SLOs is next.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
@@ -922,3 +922,21 @@ The learner selected SSE for one-way export status, WebSocket for interactive wo
 Delivery is in-process and single-instance only; events are not durable, replayable, or ordered across processes. Reconnect/refetch behavior and protocol comparisons remain incomplete.
 #### Related decisions and next design step
 No production real-time ADR yet. The current broker is synthetic and does not publish actual task mutations. Next step: Day 21 recovery review and failure-injection demonstration.
+
+### Day 21 - W3.7: Recovery review
+- Calendar date(s): 2026-09-28
+- Status: Completed
+#### What changed
+No runtime architecture change yet. The session is beginning with a failure-oriented review of the existing job, lease, retry, idempotency, artifact, search, and connection behavior.
+#### Why the design changed
+Recovery claims need controlled evidence. A passing happy-path test does not establish that accepted work survives worker loss, request replay remains one logical operation, retries stay bounded, or optional dependencies fail safely.
+#### Boundary placement and ownership
+The recovery review will exercise existing PostgreSQL job state, worker ownership tokens and leases, idempotency records, artifact metadata, and the resilience lab. It will keep PostgreSQL authoritative and distinguish observed behavior from general guarantees.
+#### API, data, and compatibility impact
+None at orientation. Any implementation change will be recorded after the debugging exercise identifies a concrete defect.
+#### Verification and evidence
+The learner correctly diagnosed expired-lease reclamation and stale-worker fencing. Regression tests verify that an artifact promoted before fenced completion rejection is removed and that a later worker recovers a durable expired claim. The learner reported focused recovery validation with 27 tests, controlled restart validation with 1 test, and the final Ruff, format, and full-suite gates passed. An actual OS process kill remains unverified.
+#### Known limitations after this day
+The review did not run an actual OS process kill during CSV generation, multi-instance recovery, or production storage cleanup. The controlled restart test demonstrates durable expired-claim recovery but does not establish exactly-once execution or universal losslessness.
+#### Related decisions and next design step
+The recovery review is complete with observed behavior recorded in the failure matrix. Next step: Day 22 / W4.1 observability and SLOs.

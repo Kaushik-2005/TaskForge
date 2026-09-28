@@ -2,12 +2,12 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 21 / W3.7 Recovery review
+- Day / module: Day 22 / W4.1 Observability and SLOs
 - Calendar date: 2026-09-28
-- Phase: Orient
+- Phase: Not Started
 - Status: Not Started
 - Mode: Guided Learning
-- Exact current task: Begin the Day 21 failure-injection and recovery review.
+- Exact current task: Begin the Day 22 observability and SLO orientation.
 - Last updated: 2026-09-28
 
 ## Day-by-day progress
@@ -33,7 +33,7 @@
 | 18 | W3.4 | 2026-09-23 | Completed | Checked | Completed |
 | 19 | W3.5 | 2026-09-27 | Completed | Checked | Completed |
 | 20 | W3.6 | 2026-09-27 to 2026-09-28 | Completed | Checked | Completed |
-| 21 | W3.7 | - | Not started | Not checked | Not started |
+| 21 | W3.7 | 2026-09-28 | Completed | Checked | Completed |
 | 22 | W4.1 | - | Not started | Not checked | Not started |
 | 23 | W4.2 | - | Not started | Not checked | Not started |
 | 24 | W4.3 | - | Not started | Not checked | Not started |
@@ -98,6 +98,25 @@
 - Untested assumptions: Real task-mutation publication, cancellation under abrupt disconnect, and multi-instance delivery remain unverified.
 - Weak concepts: Durable event publication/outbox and cross-instance replay remain deferred.
 - Optional work deferred: gRPC/Kafka deployment and cross-instance event delivery remain comparison topics.
+
+## Current module evidence - Day 21 / W3.7
+- [ ] Required selected reading completed or explained with source
+- [x] Core concept explained by learner
+- [x] Knowledge check passed
+- [x] Exercise attempted and reviewed
+- [x] Required project increment or design/lab completed
+- [x] Relevant validation executed
+- [x] Notes and corrections saved
+- [x] Daily design entry and current architecture snapshot reviewed
+- Reading/sections: Day 21 recovery review; no new reading assigned yet.
+- Learner answer or concise evidence: Learner correctly explained lease-expiry uncertainty, idempotency-key plus request-fingerprint replay, bounded single-owner retries, SQL tenant scoping, and reconnect/refetch from PostgreSQL after WebSocket loss.
+- Exercise path/result: Diagnosed expired-lease reclamation, added a regression test for cleanup after fenced completion is rejected, and added a controlled worker-restart recovery test.
+- Changed files: `tests/test_jobs.py` and Day 21 records.
+- Commands and actual results: Learner reported focused recovery validation with `27 passed`, controlled restart validation with `1 passed`, and the final `ruff check`, `ruff format --check`, and full pytest gate passed.
+- Design entry / related ADRs: Day 21 design entry; no new ADR yet.
+- Untested assumptions: An actual OS process kill during CSV generation, multi-instance recovery, and production storage cleanup remain unverified; the controlled test covers durable expired-claim recovery.
+- Weak concepts: None identified in the five-question review; continue distinguishing stale ownership from proof of worker termination.
+- Optional work deferred: Broader exactly-once and losslessness claims remain out of scope.
 
 ## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source
@@ -175,7 +194,7 @@
 ## Weekly gates
 - [x] Week 1: Durable validated CRUD
 - [x] Week 2: Isolated multi-user API
-- [ ] Week 3: Recoverable background work
+- [x] Week 3: Recoverable background work
 - [ ] Week 4: Operated release and capstone
 
 ## Blockers and deviations
@@ -183,8 +202,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 21 / W3.7, Orient
-- File/function/section: Recovery review and failure-injection demonstration.
-- Next question or exercise: Explain what durable evidence is needed after a worker or dependency failure.
-- Next build task: Inspect the Day 21 requirements before changing runtime code.
-- Next validation command: Select the focused Day 21 failure-injection test command after orientation.
+- Module and phase: Day 22 / W4.1, Orient
+- File/function/section: Observability signals, traces, metrics, and SLO definitions.
+- Next question or exercise: Distinguish logs, metrics, and traces for locating request, database, queue, and dependency delay.
+- Next build task: Inspect the Day 22 requirements before changing runtime code.
+- Next validation command: Select the focused Day 22 observability check after orientation.
