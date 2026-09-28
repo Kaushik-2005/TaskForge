@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     export_retention_hours: int = Field(default=24, ge=1, le=8760)
     job_lease_seconds: int = Field(default=30, ge=1, le=3600)
     worker_concurrency: int = Field(default=2, ge=1, le=32)
+    websocket_allowed_origins: str = (
+        "http://localhost:8000,http://127.0.0.1:8000,http://testserver"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -11,8 +11,8 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Label planned or unverified behavior instead of presenting it as implemented.
 
 ## Current architecture snapshot
-- Last updated: 2026-09-23
-- Roadmap day/module and implementation status: Day 18 / W3.4 completed; PostgreSQL tenant-safe substring search, private CSV download, artifact safety, and callable retention cleanup are implemented.
+- Last updated: 2026-09-28
+- Roadmap day/module and implementation status: Day 20 / W3.6 completed; Day 21 / W3.7 recovery review is next.
 
 ### Layer summary
 - API layer: `src/taskforge/main.py` creates the FastAPI app; `src/taskforge/api.py` owns `/api/v1` route registration, HTTP status/header behavior, service-error mapping, and route-level rate-limit checks.
@@ -25,6 +25,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Cache layer: `src/taskforge/cache.py` owns project summary cache key construction, Redis/no-op cache adapters, graceful Redis failure behavior, and post-commit cache-delete scheduling.
 - Rate-limit layer: `src/taskforge/rate_limit.py` owns Redis Lua-script rate limiting, null test fallback, rate-limit results, and fail-open/fail-closed behavior inputs.
 - Worker/background layer: `src/taskforge/jobs.py` owns export/job repository operations, atomic claim/complete flow, lease renewal, retry scheduling, CSV generation, checksumming, temporary-file cleanup, and terminal success/failure updates. `src/taskforge/worker.py` owns bounded thread-worker orchestration.
+- Real-time lab layer: `src/taskforge/realtime.py` owns process-local workspace subscriber queues, bounded fan-out, and slow-consumer resync signaling. The WebSocket route in `src/taskforge/api.py` owns connection authentication, Origin validation, workspace authorization, and cleanup.
 
 ### File ownership
 - `AGENTS.md`: tutoring and repository operating contract.
@@ -87,6 +88,7 @@ TaskForge is a learning backend for a multi-user project and task system. The de
 - Implemented: export requests require a user/workspace/operation-scoped `Idempotency-Key`; canonical fingerprints replay identical requests and reject same-scope changed requests; concurrent duplicates produce one logical export.
 - Implemented: jobs track attempts, maximum attempts, retry timing, and last error. Explicit retryable failures use bounded exponential backoff with jitter; terminal failures are recorded after the attempt limit or for non-retryable exceptions.
 - Implemented: workers write to an attempt-specific temporary path, compute a SHA-256 checksum, atomically finalize the attempt-specific output, and record its reference/checksum only through conditional owner completion.
+- Implemented lab: authenticated workspace WebSocket subscriptions with allowed-Origin validation, bounded subscriber queues, disconnect cleanup, and `resync_required` signaling for slow consumers. The broker is process-local and receives synthetic events; it is not durable or replayable.
 
 ### Data ownership and invariants
 - Project and task data live in PostgreSQL when `TASKFORGE_STORAGE_BACKEND=postgres`, the default runtime setting. PostgreSQL is authoritative for project summaries; Redis stores only derived project summary cache entries and disposable rate-limit counters.
@@ -848,7 +850,7 @@ No new ADR was created; the implementation follows the roadmap's PostgreSQL job 
 
 ### Day 17 - W3.3: Idempotency and reliable retries
 - Calendar date(s): 2026-09-23
-- Status: In Progress
+- Status: Completed
 #### What changed
 No runtime architecture change. The theory checkpoint clarified the planned idempotency contract and the evidence required to reconcile output after a stale lease. The current architecture remains PostgreSQL-backed jobs with at-least-once execution semantics.
 #### Why the design changed
@@ -884,3 +886,39 @@ Learner correctly compared substring and full-text semantics, identified the lea
 Search remains substring-only and has no measured production workload/query plan. Retention cleanup is callable but not scheduled by a production lifecycle process. Cloud object storage, presigned URLs, and semantic search remain deferred.
 #### Related decisions and next design step
 Next step: Day 19 / W3.5 dependency resilience—make timeout budgets, retry ownership, and dependency failure behavior explicit.
+
+### Day 19 - W3.5: Dependency resilience
+- Calendar date(s): 2026-09-27
+- Status: In Progress
+#### What changed
+Added the separate `src/taskforge/resilience_lab.py` module with scripted dependency outcomes, a fake clock, one retry owner, deadline propagation, circuit-breaker states, a half-open probe, a bounded bulkhead, and a combined resilience wrapper.
+#### Why the design changed
+TaskForge will eventually call dependencies that can be slow or unavailable. A fixed timeout at each layer can exceed the original request budget, and a timeout does not prove the remote operation did not occur. The resilience lab makes these failure semantics explicit before applying them to a critical project path.
+#### Boundary placement and ownership
+The Day 19 mock adapter and circuit breaker will remain separate from the critical TaskForge API/export path. The adapter owns controllable delay/status behavior; the caller owns the overall deadline and one retry policy; the breaker owns temporary call admission based on recent failures.
+#### API, data, and compatibility impact
+No production API or schema change. The resilience lab is intentionally separate from critical TaskForge request and export paths.
+#### Verification and evidence
+Required gRPC deadline and AWS backoff/jitter sources were reviewed. The learner correctly explained deadline propagation, timeout uncertainty, retry amplification, retry classification, circuit transitions, bulkheads, and bounded degradation. Focused resilience tests passed, and the full test, Ruff, and format validation gates passed after PostgreSQL was restored.
+#### Known limitations after this day
+The lab does not prove real network cancellation, multi-process coordination, production dependency metrics, or scheduler/service-mesh integration. Circuit and retry policies are educational defaults, not production tuning.
+#### Related decisions and next design step
+No production resilience ADR was created because the implementation is an isolated lab. Next step: Day 20 / W3.6 protocol and real-time communication choices.
+
+### Day 20 - W3.6: Real-time and communication choices
+- Calendar date(s): 2026-09-27
+- Status: Completed
+#### What changed
+Added an initial in-process workspace update broker and authenticated WebSocket route with bounded queues, origin validation, membership authorization, disconnect cleanup, and resync signaling for slow consumers.
+#### Why the design changed
+Polling remains the reliable status mechanism, but the lab needs to demonstrate push updates and the resource lifecycle of long-lived connections. A bounded in-process broker makes backpressure and single-instance limitations visible without introducing a broker or event platform prematurely.
+#### Boundary placement and ownership
+`src/taskforge/realtime.py` owns subscriber queues and event fan-out. The WebSocket route owns Origin validation, cookie-session authentication, workspace membership authorization, and connection cleanup. The lab publisher owns event creation; no task mutation route is coupled to delivery yet.
+#### API, data, and compatibility impact
+The lab adds `GET /api/v1/workspaces/{workspace_id}/updates` as a WebSocket route and a configurable allowed-Origin list. No database or production task-event schema change exists yet.
+#### Verification and evidence
+The learner selected SSE for one-way export status, WebSocket for interactive workspace updates, and durable events for worker completion. The learner correctly explained per-task monotonic versions, reconnect/refetch from PostgreSQL, and the need for an outbox to make durable publication atomic. WebSocket/broker tests cover authorized delivery, outsider rejection, disallowed Origin, and bounded slow-consumer behavior. The learner reported that Ruff, format checking, focused real-time tests, and the full test suite all passed.
+#### Known limitations after this day
+Delivery is in-process and single-instance only; events are not durable, replayable, or ordered across processes. Reconnect/refetch behavior and protocol comparisons remain incomplete.
+#### Related decisions and next design step
+No production real-time ADR yet. The current broker is synthetic and does not publish actual task mutations. Next step: Day 21 recovery review and failure-injection demonstration.

@@ -2,13 +2,13 @@
 
 ## Current position
 - Roadmap: roadmap.md
-- Day / module: Day 18 / W3.4 Search and files
-- Calendar date: 2026-09-23
-- Phase: Review
-- Status: Completed
+- Day / module: Day 21 / W3.7 Recovery review
+- Calendar date: 2026-09-28
+- Phase: Orient
+- Status: Not Started
 - Mode: Guided Learning
-- Exact current task: Day 18 complete; wait for request to start Day 19 / W3.5.
-- Last updated: 2026-09-23
+- Exact current task: Begin the Day 21 failure-injection and recovery review.
+- Last updated: 2026-09-28
 
 ## Day-by-day progress
 | Day | Module | Date(s) | Implementation | Understanding | Overall |
@@ -31,8 +31,8 @@
 | 16 | W3.2 | 2026-09-22 | Completed | Checked | Completed |
 | 17 | W3.3 | 2026-09-22 to 2026-09-23 | Completed | Checked | Completed |
 | 18 | W3.4 | 2026-09-23 | Completed | Checked | Completed |
-| 19 | W3.5 | - | Not started | Not checked | Not started |
-| 20 | W3.6 | - | Not started | Not checked | Not started |
+| 19 | W3.5 | 2026-09-27 | Completed | Checked | Completed |
+| 20 | W3.6 | 2026-09-27 to 2026-09-28 | Completed | Checked | Completed |
 | 21 | W3.7 | - | Not started | Not checked | Not started |
 | 22 | W4.1 | - | Not started | Not checked | Not started |
 | 23 | W4.2 | - | Not started | Not checked | Not started |
@@ -80,7 +80,7 @@
 - Weak concepts: Continue reinforcing that lease expiry does not stop execution and that process-local locks cannot coordinate separate worker processes.
 - Optional work deferred: Process-pool CPU execution, adaptive concurrency, lease metrics, and live failure injection.
 
-## Current module evidence
+## Last completed module evidence - Day 20 / W3.6
 - [x] Required selected reading completed or explained with source
 - [x] Core concept explained by learner
 - [x] Knowledge check passed
@@ -89,15 +89,15 @@
 - [x] Relevant validation executed
 - [x] Notes and corrections saved
 - [x] Daily design entry and current architecture snapshot reviewed
-- Reading/sections: Day 18 / W3.4, BFP 11 search/relevance; PostgreSQL full-text search; S3 presigned URLs. Theory was explained with primary PostgreSQL and AWS references.
-- Learner answer or concise evidence: Learner selected substring search for the current scope, identified leading-wildcard performance limits, and explained when FTS or trigram search may become appropriate. Learner correctly placed authorization before storage-path resolution and distinguished a missing export from a missing succeeded artifact.
-- Exercise path/result: Search-model and private-download authorization exercise completed and reviewed.
-- Changed files: `src/taskforge/authorization_repository.py`, `src/taskforge/authorization_service.py`, `src/taskforge/api.py`, `src/taskforge/db_models.py`, `src/taskforge/errors.py`, `src/taskforge/jobs.py`, `migrations/versions/0009_add_task_title_trigram_index.py`, `tests/test_task_search.py`, `tests/test_authorization.py`, `tests/test_jobs.py`.
-- Commands and actual results: Focused download tests passed with `4 passed`; formula-safety and traversal tests passed; the full `python -m pytest -q tests` command passed. Ruff remains unverified in the learner's working environment.
-- Design entry / related ADRs: Day 18 design entry added; search implementation decision remains pending until the endpoint query shape is selected.
-- Untested assumptions: Search relevance remains substring-only; no production query-plan/load measurement or cloud object-storage lifecycle has been run. Retention is a callable cleanup operation and is not yet scheduled by a production process.
-- Weak concepts: Continue reinforcing that PostgreSQL authorization predicates must remain in the search/download data path and that `ILIKE '%term%'` needs measurement or a trigram index as data grows.
-- Optional work deferred: Semantic search and cloud object storage remain comparison/design topics until the core local implementation is complete.
+- Reading/sections: Day 20 / W3.6, BFP 24 connection/backpressure; BFP 13 contracts; BFP 23 ordering/replay; gRPC deadlines; Kafka design.
+- Learner answer or concise evidence: Learner selected SSE for one-way export status, WebSocket for interactive workspace updates, and durable events for worker-to-worker completion. Learner designed `task.updated` with per-task monotonic versioning and correctly explained reconnect/refetch from PostgreSQL.
+- Exercise path/result: Implemented initial in-process WebSocket/broker lab; protocol comparison and event-ordering exercise reviewed.
+- Changed files: `src/taskforge/realtime.py`, `src/taskforge/api.py`, `src/taskforge/config.py`, `src/taskforge/main.py`, `tests/test_realtime.py`.
+- Commands and actual results: Learner reported that `python -m ruff check .`, `python -m ruff format --check .`, focused real-time tests, and `python -m pytest -q tests` all passed.
+- Design entry / related ADRs: Day 20 design entry added; no production real-time ADR yet.
+- Untested assumptions: Real task-mutation publication, cancellation under abrupt disconnect, and multi-instance delivery remain unverified.
+- Weak concepts: Durable event publication/outbox and cross-instance replay remain deferred.
+- Optional work deferred: gRPC/Kafka deployment and cross-instance event delivery remain comparison topics.
 
 ## Last completed module evidence - Day 13
 - [x] Required selected reading completed or explained with source
@@ -183,8 +183,8 @@
 - The normal patch tool and some sandboxed commands failed because `codex-windows-sandbox-setup.exe` was unavailable. Recovery action: local workspace edits and validation were run with explicit escalation.
 
 ## Exact next session
-- Module and phase: Day 19 / W3.5, Orient
-- File/function/section: Dependency deadlines, retry budgets, and circuit-breaker lab.
-- Next question or exercise: Calculate retry multiplication across layers and allocate a request deadline budget.
-- Next build task: Read the Day 19 roadmap scope and identify the first dependency boundary to make deadline-aware.
-- Next validation command: Confirm the Day 19 exercise inputs before implementation.
+- Module and phase: Day 21 / W3.7, Orient
+- File/function/section: Recovery review and failure-injection demonstration.
+- Next question or exercise: Explain what durable evidence is needed after a worker or dependency failure.
+- Next build task: Inspect the Day 21 requirements before changing runtime code.
+- Next validation command: Select the focused Day 21 failure-injection test command after orientation.

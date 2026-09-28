@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -110,7 +110,7 @@ def test_search_workspace_tasks_rejects_non_member(
 
     user_id = uuid4()
     workspace_id = uuid4()
-    created_at = datetime.now(timezone.utc)
+    created_at = datetime.now(UTC)
 
     with session_factory() as session:
         session.add_all(

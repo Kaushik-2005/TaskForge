@@ -17,6 +17,7 @@ from taskforge.cache import RedisProjectSummaryCache
 from taskforge.config import Settings, get_settings
 from taskforge.db import create_db_engine, create_session_factory
 from taskforge.rate_limit import NullRateLimiter, RedisRateLimiter
+from taskforge.realtime import WorkspaceUpdateBroker
 from taskforge.services import TaskForgeService
 from taskforge.store import InMemoryStore
 
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
+    app.state.workspace_update_broker = WorkspaceUpdateBroker()
 
     redis_client = Redis.from_url(
         settings.redis_url,

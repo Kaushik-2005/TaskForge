@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from typing import Annotated
@@ -11,6 +12,8 @@ from fastapi import (
     Query,
     Request,
     Response,
+    WebSocket,
+    WebSocketDisconnect,
     status,
 )
 from fastapi.responses import FileResponse
@@ -277,6 +280,75 @@ def get_current_user(request: Request) -> Generator[UserRead]:
 
 
 CurrentUserDep = Annotated[UserRead, Depends(get_current_user)]
+
+
+@router.websocket("/workspaces/{workspace_id}/updates")
+async def workspace_updates(websocket: WebSocket, workspace_id: UUID) -> None:
+    settings = websocket.app.state.settings
+    origin = websocket.headers.get("origin")
+    allowed_origins = {
+        value.strip()
+        for value in settings.websocket_allowed_origins.split(",")
+        if value.strip()
+    }
+    if origin is not None and origin not in allowed_origins:
+        await websocket.close(code=1008)
+        return
+
+    session_factory = getattr(websocket.app.state, "session_factory", None)
+    if session_factory is None:
+        await websocket.close(code=1011)
+        return
+
+    session_token = websocket.cookies.get(settings.session_cookie_name)
+    with session_factory() as session:
+        auth = AuthService(
+            AuthRepository(session),
+            session_ttl=timedelta(minutes=settings.session_ttl_minutes),
+        )
+        try:
+            current_user = auth.current_user(session_token)
+        except AuthError:
+            await websocket.close(code=1008)
+            return
+
+        authorization = AuthorizationRepository(session)
+        if not authorization.user_has_workspace_membership(
+            current_user.id,
+            workspace_id,
+        ):
+            await websocket.close(code=1008)
+            return
+
+    await websocket.accept()
+    broker = websocket.app.state.workspace_update_broker
+    queue = broker.subscribe(workspace_id)
+
+    try:
+        while True:
+            event_task = asyncio.create_task(queue.get())
+            receive_task = asyncio.create_task(websocket.receive_text())
+            done, pending = await asyncio.wait(
+                {event_task, receive_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+            if receive_task in done:
+                try:
+                    receive_task.result()
+                except WebSocketDisconnect:
+                    break
+                continue
+
+            await websocket.send_json(event_task.result())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        broker.unsubscribe(workspace_id, queue)
 
 
 @router.post(

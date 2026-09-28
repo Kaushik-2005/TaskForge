@@ -404,7 +404,12 @@ def test_owner_can_search_workspace_tasks(
         owner = register_and_login(client, "owner@example.com")
         workspace_id = create_workspace(client, owner)
         project_a = create_workspace_project(client, workspace_id, owner)
-        project_b = create_workspace_project(client, workspace_id, owner, "Second project")
+        project_b = create_workspace_project(
+            client,
+            workspace_id,
+            owner,
+            "Second project",
+        )
 
         create_workspace_task(
             client,
